@@ -1,48 +1,70 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/select.h>
-#include <arpa/inet.h>
+
 #include <netdb.h>
-#include <cstring>
-#include <cstdio>
-#include <iostream>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <arpa/inet.h>
+
 #include "socket_tools.h"
 
 int main(int argc, const char **argv)
 {
-  const char *port = "2025";
+  const char *openPort = "2025";
 
-  int sfd = create_dgram_socket(nullptr, port, nullptr);
+  int sfd = create_dgram_socket(nullptr, openPort, nullptr);
 
   if (sfd == -1)
   {
-    printf("cannot create socket\n");
+    printf("Cannot create a server socket!\n");
     return 1;
   }
-  printf("listening!\n");
 
+  printf("Server is on. Listening...\n");
+
+
+  fd_set readSet;
+  FD_ZERO(&readSet);
+  FD_SET(sfd, &readSet);
+
+  timeval timeout = { 0, 100000 }; // 100 ms
+
+  char *buffer = new char[BUF_SIZE];
+  ssize_t recvRes = -1; 
+  ssize_t sendRes = -1; 
+  addrinfo clientAddrInfo;
+
+  sockaddr_in sin;
+
+
+  
   while (true)
   {
-    fd_set readSet;
-    FD_ZERO(&readSet);
-    FD_SET(sfd, &readSet);
+    fd_set tmpReadSet = readSet;
 
-    timeval timeout = { 0, 100000 }; // 100 ms
-    select(sfd + 1, &readSet, NULL, NULL, &timeout);
+    select(sfd + 1, &tmpReadSet, NULL, NULL, &timeout);
 
 
     if (FD_ISSET(sfd, &readSet))
-    {
-      constexpr size_t buf_size = 1000;
-      static char buffer[buf_size];
-      memset(buffer, 0, buf_size);
-
-      sockaddr_in sin;
-      socklen_t slen = sizeof(sockaddr_in);
-      ssize_t numBytes = recvfrom(sfd, buffer, buf_size - 1, 0, (sockaddr*)&sin, &slen);
-      if (numBytes > 0)
+    { 
+      recvRes = recvfrom(
+        sfd, buffer, BUF_SIZE, 
+        MSG_WAITALL, clientAddrInfo.ai_addr, &clientAddrInfo.ai_addrlen);
+      if (recvRes > 0)
       {
+        sin = *((sockaddr_in*)clientAddrInfo.ai_addr);
+        
         printf("(%s:%d) %s\n", inet_ntoa(sin.sin_addr), sin.sin_port, buffer); // assume that buffer is a string
+
+        sendRes = sendto(
+          sfd, buffer, BUF_SIZE,
+          MSG_WAITALL, clientAddrInfo.ai_addr, clientAddrInfo.ai_addrlen);
+        if (sendRes == -1)
+        { 
+          printf("%s", strerror(errno)); 
+        }
       }
     }
   }
