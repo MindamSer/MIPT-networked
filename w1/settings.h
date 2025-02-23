@@ -3,7 +3,8 @@
 #define SERVER_ADDR "localhost"
 #define SERVER_PORT "2025"
 
-#define CLIENT_PORT_FROM 2048
-#define CLIENT_PORT_RANGE 1024
+#define COMMAND_REG "/reg"
+#define COMMAND_ESC "/quit"
 
-#define CLIENT_INVITE "> "
+#define COMMAND_ALL "/all"
+#define COMMAND_MATH "/mathduel"
