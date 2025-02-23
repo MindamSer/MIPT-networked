@@ -69,6 +69,7 @@ int create_recv_socket(const char *port, sockaddr_in *res_sockaddr)
       int true_val = 1;
       fcntl(sfd, F_SETFL, O_NONBLOCK);
       setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &true_val, sizeof(int));
+      
       if (bind(sfd, cur_ai->ai_addr, cur_ai->ai_addrlen) == 0) 
       { break; }
   
