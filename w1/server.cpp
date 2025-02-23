@@ -170,6 +170,26 @@ int main(int argc, const char **argv)
             std::cout << strerror(errno) << std::endl;
           }
         }
+        else if (messageElems[0] == COMMAND_ALL)
+        {
+          std::cout << "broadcasting message" << std::endl;
+
+          std::string concat;
+          for(int i = 1; i < messageElems.size(); ++i)
+          {
+            concat += messageElems[i] + " ";
+          }
+          for(sockaddr_in curAddr : registeredAddresses)
+          {
+            sendRes = sendto(
+              sockfd, concat.c_str(), BUF_SIZE,
+              0, (sockaddr *)&curAddr, senderSockaddrInLen);
+            if (sendRes == -1)
+            {
+              std::cout << strerror(errno) << std::endl;
+            }
+          }
+        }
         else
         {
           sprintf(buffer, "Unknown command!");
