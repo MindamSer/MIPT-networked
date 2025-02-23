@@ -4,10 +4,13 @@
 #include <sys/select.h>
 
 #include <netdb.h>
-#include <stdio.h>
 #include <string.h>
 #include <errno.h>
 #include <arpa/inet.h>
+
+#include <iostream>
+#include <thread>
+#include <string>
 
 #include "socket_tools.h"
 #include "settings.h"
@@ -21,61 +24,89 @@ int main(int argc, const char **argv)
   socklen_t sockaddrInLen = sizeof(sockaddr_in);
 
   {
-    const char *serverAdress = SERVER_ADDR;
-    const char *serverPort = SERVER_PORT;
+    std::string serverAdress = SERVER_ADDR;
+    std::string serverPort = SERVER_PORT;
 
-    if (get_sockaddr_by_addr(serverAdress, serverPort, &serverSockaddrIn))
+    if (get_sockaddr_by_addr(serverAdress.c_str(), serverPort.c_str(), &serverSockaddrIn))
     {
-      printf("Cannot get server sockaddr!\n");
+      std::cout << "Cannot get server sockaddr!" << std::endl;
       return 1;
     }
 
-    char selfPort[8];
+    int clientPortFrom = CLIENT_PORT_FROM;
+    int clientPortRange = CLIENT_PORT_RANGE;
+    std::string selfPort;
 
-    for (int i = 0; i < CLIENT_PORT_RANGE && sockfd == -1; ++i)
+    for (int i = 0; i < clientPortRange && sockfd == -1; ++i)
     {
-      sprintf(selfPort, "%d", CLIENT_PORT_FROM + i);
+      selfPort = std::to_string(clientPortFrom + i);
 
-      sockfd = create_recv_socket(selfPort, &clientSockaddrIn);
+      sockfd = create_recv_socket(selfPort.c_str(), &clientSockaddrIn);
     }
     if (sockfd == -1)
     {
-      printf("Cannot create a client recv socket!\n");
+      std::cout << "Cannot create a client recv socket!" << std::endl;
       return 1;
     }
 
-    printf("Server port: %d; Your port: %d\n", 
-      ntohs(serverSockaddrIn.sin_port), ntohs(clientSockaddrIn.sin_port));
+    std::cout 
+    << "Server port: " << ntohs(serverSockaddrIn.sin_port) 
+    << "; Your port: " << ntohs(clientSockaddrIn.sin_port) 
+    << std::endl;
   }
 
   
+  fd_set readSet;
+  FD_ZERO(&readSet);
+  FD_SET(sockfd, &readSet);
+  timeval timeout = { 0, 100000 };
 
   char *buffer = new char[BUF_SIZE];
+  std::string input;
   ssize_t sendRes = -1; 
   ssize_t recvRes = -1; 
 
-  while (true)
-  {
-    printf(CLIENT_INVITE);
-    fgets(buffer, BUF_SIZE, stdin);
-    
-    sendRes = sendto(
-      sockfd, buffer, BUF_SIZE,
-      0, (sockaddr *)&serverSockaddrIn, sockaddrInLen);
-    if (sendRes == -1)
-    { 
-      printf("%s", strerror(errno)); 
-    }
 
-    recvRes = recvfrom(
-      sockfd, buffer, BUF_SIZE, 
-      0, (sockaddr *)&serverSockaddrIn, &sockaddrInLen);
-    if (recvRes > 0)
+  std::thread thread_recv([&]()
+  {
+    while(true)
     {
-      printf("repty from (%s:%d): %s", 
-        inet_ntoa(serverSockaddrIn.sin_addr), ntohs(serverSockaddrIn.sin_port), buffer);
+      fd_set tmpReadSet = readSet;
+
+      select(sockfd + 1, &tmpReadSet, nullptr, nullptr, &timeout);
+  
+      if (FD_ISSET(sockfd, &readSet))
+      {
+        recvRes = recvfrom(
+          sockfd, buffer, BUF_SIZE, 
+          0, (sockaddr *)&serverSockaddrIn, &sockaddrInLen);
+        if (recvRes > 0)
+        {
+          std::cout << "reply from server: " << buffer << std::endl;
+        }
+      }
     }
-  }
+  });
+
+  std::thread thread_send([&]()
+  {
+    while(true)
+    {
+      std::cin >> input;
+      sprintf(buffer, "%s", input.c_str());
+      
+      sendRes = sendto(
+        sockfd, buffer, BUF_SIZE,
+        0, (sockaddr *)&serverSockaddrIn, sockaddrInLen);
+      if (sendRes == -1)
+      { 
+        std::cout << strerror(errno) << std::endl;
+      }
+    }
+  });
+
+  thread_recv.join();
+  thread_send.join();
 
   delete[] buffer;
 
