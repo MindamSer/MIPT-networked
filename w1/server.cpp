@@ -15,6 +15,7 @@
 #include <vector>
 #include <iterator>
 #include <algorithm>
+#include <random>
 
 #include "socket_tools.h"
 #include "settings.h"
@@ -78,6 +79,9 @@ int main(int argc, const char **argv)
   socklen_t senderSockaddrInLen = sizeof(sockaddr_in);
 
   std::vector<sockaddr_in> registeredAddresses;
+
+  std::vector<sockaddr_in> duelSeekers;
+  int duelAnswer = 0;
 
 
 
@@ -174,16 +178,164 @@ int main(int argc, const char **argv)
         {
           std::cout << "broadcasting message" << std::endl;
 
-          std::string concat;
+          std::string message;
           for(int i = 1; i < messageElems.size(); ++i)
           {
-            concat += messageElems[i] + " ";
+            message += messageElems[i] + " ";
           }
           for(sockaddr_in curAddr : registeredAddresses)
           {
             sendRes = sendto(
-              sockfd, concat.c_str(), BUF_SIZE,
+              sockfd, message.c_str(), BUF_SIZE,
               0, (sockaddr *)&curAddr, senderSockaddrInLen);
+            if (sendRes == -1)
+            {
+              std::cout << strerror(errno) << std::endl;
+            }
+          }
+        }
+        else if (messageElems[0] == COMMAND_MATH)
+        {
+          if (duelSeekers.size() > 1)
+          {
+            sprintf(buffer, "Duel in progress!");
+            sendRes = sendto(
+              sockfd, buffer, BUF_SIZE,
+              0, (sockaddr *)&senderSockaddrIn, senderSockaddrInLen);
+            if (sendRes == -1)
+            {
+              std::cout << strerror(errno) << std::endl;
+            }
+
+            continue;
+          }
+
+          if (std::find(
+            duelSeekers.begin(), duelSeekers.end(), 
+            senderSockaddrIn) != duelSeekers.end())
+          {
+            sprintf(buffer, "You are already in queue!");
+            sendRes = sendto(
+              sockfd, buffer, BUF_SIZE,
+              0, (sockaddr *)&senderSockaddrIn, senderSockaddrInLen);
+            if (sendRes == -1)
+            {
+              std::cout << strerror(errno) << std::endl;
+            }
+
+            continue;
+          }
+
+          duelSeekers.push_back(senderSockaddrIn);
+
+          std::cout << "seeking for duel" << std::endl;
+
+          if (duelSeekers.size() == 1)
+          {
+            std::string message = "Someone in looking for duel! Type /mathduel to take part";
+            for(sockaddr_in curAddr : registeredAddresses)
+            {
+              sendRes = sendto(
+                sockfd, message.c_str(), BUF_SIZE,
+                0, (sockaddr *)&curAddr, senderSockaddrInLen);
+              if (sendRes == -1)
+              {
+                std::cout << strerror(errno) << std::endl;
+              }
+            }
+          }
+
+          if (duelSeekers.size() == 2)
+          {
+            std::cout << "duel begins" << std::endl;
+
+            std::string message = "Duel started!";
+            for(sockaddr_in curAddr : registeredAddresses)
+            {
+              sendRes = sendto(
+                sockfd, message.c_str(), BUF_SIZE,
+                0, (sockaddr *)&curAddr, senderSockaddrInLen);
+              if (sendRes == -1)
+              {
+                std::cout << strerror(errno) << std::endl;
+              }
+            }
+
+            int a = random() % 100;
+            int b = random() % 100;
+            int c = random() % 100;
+            duelAnswer = a * b + c;
+
+            char equasion[16];
+            sprintf(equasion, "%d * %d + %d", a, b, c);
+
+            for(sockaddr_in curAddr : duelSeekers)
+            {
+              sendRes = sendto(
+                sockfd, equasion, BUF_SIZE,
+                0, (sockaddr *)&curAddr, senderSockaddrInLen);
+              if (sendRes == -1)
+              {
+                std::cout << strerror(errno) << std::endl;
+              }
+            }
+          }
+        }
+        else if (messageElems[0] == COMMAND_ANS)
+        {
+          if (duelSeekers.size() != 2)
+          {
+            sprintf(buffer, "Duel is not started!");
+            sendRes = sendto(
+              sockfd, buffer, BUF_SIZE,
+              0, (sockaddr *)&senderSockaddrIn, senderSockaddrInLen);
+            if (sendRes == -1)
+            {
+              std::cout << strerror(errno) << std::endl;
+            }
+
+            continue;
+          }
+
+          if (std::find(
+            duelSeekers.begin(), duelSeekers.end(), 
+            senderSockaddrIn) == duelSeekers.end())
+          {
+            sprintf(buffer, "You are not dueling now!");
+            sendRes = sendto(
+              sockfd, buffer, BUF_SIZE,
+              0, (sockaddr *)&senderSockaddrIn, senderSockaddrInLen);
+            if (sendRes == -1)
+            {
+              std::cout << strerror(errno) << std::endl;
+            }
+
+            continue;
+          }
+
+          int answer = std::stoi(messageElems[1]);
+          if (answer == duelAnswer)
+          {
+            sprintf(buffer, "(%s:%d) is winner! duel is over",
+              inet_ntoa(senderSockaddrIn.sin_addr),ntohs(senderSockaddrIn.sin_port) );
+            for(sockaddr_in curAddr : duelSeekers)
+            {
+              sendRes = sendto(
+                sockfd, buffer, BUF_SIZE,
+                0, (sockaddr *)&curAddr, senderSockaddrInLen);
+              if (sendRes == -1)
+              {
+                std::cout << strerror(errno) << std::endl;
+              }
+            }
+            duelSeekers.clear();
+          }
+          else
+          {
+            sprintf(buffer, "You are wrong!");
+            sendRes = sendto(
+              sockfd, buffer, BUF_SIZE,
+              0, (sockaddr *)&senderSockaddrIn, senderSockaddrInLen);
             if (sendRes == -1)
             {
               std::cout << strerror(errno) << std::endl;

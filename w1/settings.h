@@ -8,3 +8,4 @@
 
 #define COMMAND_ALL "/all"
 #define COMMAND_MATH "/mathduel"
+#define COMMAND_ANS "/ans"
