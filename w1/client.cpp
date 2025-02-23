@@ -17,6 +17,12 @@
 
 int main(int argc, const char **argv)
 {
+  if(argc != 2)
+  {
+    std::cout << "Usage: ./{app} {port}" << std::endl;
+    return 1;
+  }
+
   int sockfd = -1;
   
   sockaddr_in serverSockaddrIn;
@@ -33,16 +39,9 @@ int main(int argc, const char **argv)
       return 1;
     }
 
-    int clientPortFrom = CLIENT_PORT_FROM;
-    int clientPortRange = CLIENT_PORT_RANGE;
-    std::string selfPort;
+    std::string selfPort = argv[1];
 
-    for (int i = 0; i < clientPortRange && sockfd == -1; ++i)
-    {
-      selfPort = std::to_string(clientPortFrom + i);
-
-      sockfd = create_recv_socket(selfPort.c_str(), &clientSockaddrIn);
-    }
+    sockfd = create_recv_socket(selfPort.c_str(), &clientSockaddrIn);
     if (sockfd == -1)
     {
       std::cout << "Cannot create a client recv socket!" << std::endl;
@@ -61,9 +60,10 @@ int main(int argc, const char **argv)
   FD_SET(sockfd, &readSet);
   timeval timeout = { 0, 100000 };
 
-  char *buffer = new char[BUF_SIZE];
   std::string input;
-  ssize_t sendRes = -1; 
+  ssize_t sendRes = -1;
+  
+  char *buffer = new char[BUF_SIZE];
   ssize_t recvRes = -1; 
 
 
@@ -82,7 +82,7 @@ int main(int argc, const char **argv)
           0, (sockaddr *)&serverSockaddrIn, &sockaddrInLen);
         if (recvRes > 0)
         {
-          std::cout << "reply from server: " << buffer << std::endl;
+          std::cout << buffer << std::endl;
         }
       }
     }
@@ -92,11 +92,10 @@ int main(int argc, const char **argv)
   {
     while(true)
     {
-      std::cin >> input;
-      sprintf(buffer, "%s", input.c_str());
+      getline(std::cin, input);
       
       sendRes = sendto(
-        sockfd, buffer, BUF_SIZE,
+        sockfd, input.c_str(), BUF_SIZE,
         0, (sockaddr *)&serverSockaddrIn, sockaddrInLen);
       if (sendRes == -1)
       { 

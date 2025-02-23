@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -10,9 +11,36 @@
 
 #include <iostream>
 #include <string>
+#include <sstream>
+#include <vector>
+#include <iterator>
+#include <algorithm>
 
 #include "socket_tools.h"
 #include "settings.h"
+
+
+template <typename Out>
+void split(const std::string &s, char delim, Out result) 
+{
+    std::istringstream iss(s);
+    std::string item;
+    while (std::getline(iss, item, delim)) {
+        *result++ = item;
+    }
+}
+
+std::vector<std::string> split(const std::string &s, char delim) 
+{
+    std::vector<std::string> elems;
+    split(s, delim, std::back_inserter(elems));
+    return elems;
+}
+
+bool operator==(const sockaddr_in &left, const sockaddr_in &right)
+{
+  return (left.sin_port == right.sin_port) && (left.sin_addr.s_addr == right.sin_addr.s_addr);
+}
 
 
 int main(int argc, const char **argv)
@@ -42,11 +70,16 @@ int main(int argc, const char **argv)
   timeval timeout = { 0, 100000 }; // 100 ms
 
   char *buffer = new char[BUF_SIZE];
+  std::vector<std::string> messageElems;
   ssize_t recvRes = -1;
   ssize_t sendRes = -1;
 
   sockaddr_in senderSockaddrIn;
   socklen_t senderSockaddrInLen = sizeof(sockaddr_in);
+
+  std::vector<sockaddr_in> registeredAddresses;
+
+
 
 
   while (true)
@@ -63,18 +96,90 @@ int main(int argc, const char **argv)
         0, (sockaddr *)&senderSockaddrIn, &senderSockaddrInLen);
       if (recvRes > 0)
       {
+        if(buffer[0] != '/')
+        {
+          sprintf(buffer, "Expected: /{command}");
+          sendRes = sendto(
+            sockfd, buffer, BUF_SIZE,
+            0, (sockaddr *)&senderSockaddrIn, senderSockaddrInLen);
+          if (sendRes == -1)
+          { 
+            std::cout << strerror(errno) << std::endl;
+          }
+
+          continue;
+        }
+
         std::cout 
         << "(" << inet_ntoa(senderSockaddrIn.sin_addr) 
         << ":" << ntohs(senderSockaddrIn.sin_port) 
         << "): " << buffer << std::endl;
 
+        messageElems = split(buffer, ' ');
 
-        sendRes = sendto(
-          sockfd, buffer, BUF_SIZE,
-          0, (sockaddr *)&senderSockaddrIn, senderSockaddrInLen);
-        if (sendRes == -1)
-        { 
-          std::cout << strerror(errno) << std::endl;
+        if (std::find(
+          registeredAddresses.begin(), registeredAddresses.end(), 
+          senderSockaddrIn) == registeredAddresses.end())
+        {
+          if (messageElems[0] == COMMAND_REG)
+          {
+            registeredAddresses.push_back(senderSockaddrIn);
+
+            std::cout << "user is now registered" << std::endl;
+
+            sprintf(buffer, "You are now registered!");
+            sendRes = sendto(
+              sockfd, buffer, BUF_SIZE,
+              0, (sockaddr *)&senderSockaddrIn, senderSockaddrInLen);
+            if (sendRes == -1)
+            {
+              std::cout << strerror(errno) << std::endl;
+            }
+
+            continue;
+          }
+
+          std::cout << "unregistered user" << std::endl;
+
+          sprintf(buffer, "You are not registered! Type /reg");
+          sendRes = sendto(
+            sockfd, buffer, BUF_SIZE,
+            0, (sockaddr *)&senderSockaddrIn, senderSockaddrInLen);
+          if (sendRes == -1)
+          {
+            std::cout << strerror(errno) << std::endl;
+          }
+
+          continue;
+        }
+        
+        if (messageElems[0] == COMMAND_ESC)
+        {
+          registeredAddresses.erase(std::find(
+            registeredAddresses.begin(), registeredAddresses.end(), 
+            senderSockaddrIn));
+
+          std::cout << "user is now unregistered" << std::endl;
+
+          sprintf(buffer, "You are not longer registered!");
+          sendRes = sendto(
+            sockfd, buffer, BUF_SIZE,
+            0, (sockaddr *)&senderSockaddrIn, senderSockaddrInLen);
+          if (sendRes == -1)
+          {
+            std::cout << strerror(errno) << std::endl;
+          }
+        }
+        else
+        {
+          sprintf(buffer, "Unknown command!");
+          sendRes = sendto(
+            sockfd, buffer, BUF_SIZE,
+            0, (sockaddr *)&senderSockaddrIn, senderSockaddrInLen);
+          if (sendRes == -1)
+          {
+            std::cout << strerror(errno) << std::endl;
+          }
         }
       }
     }
