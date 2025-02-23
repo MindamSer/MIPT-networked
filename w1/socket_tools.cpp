@@ -1,3 +1,4 @@
+#include <netinet/in.h>
 #include <sys/socket.h>
 
 #include <netdb.h>
@@ -7,35 +8,34 @@
 
 #include "socket_tools.h"
 
-// Adaptation of linux man page: https://linux.die.net/man/3/getaddrinfo
-static int get_dgram_socket(addrinfo *ai_list, bool should_bind, addrinfo *res_addr)
+
+int get_sockaddr_by_addr(const char *address, const char *port, sockaddr_in *res_sockaddr)
 {
-  int sfd = -1;
+  addrinfo hints;
+  memset(&hints, 0, sizeof(addrinfo));
 
-  for (addrinfo *cur_ai = ai_list; cur_ai != nullptr; cur_ai = cur_ai->ai_next)
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_DGRAM;
+  hints.ai_protocol = IPPROTO_UDP;
+  hints.ai_flags = AI_PASSIVE;
+
+
+  addrinfo *ai_list = nullptr;
+
+  if (getaddrinfo(nullptr, port, &hints, &ai_list) == 0)
   {
-    sfd = socket(cur_ai->ai_family, cur_ai->ai_socktype, cur_ai->ai_protocol);
-    if (sfd == -1) 
-    { continue; }
+    *res_sockaddr = *((sockaddr_in *)ai_list->ai_addr);
 
-    int true_val = 1;
-    fcntl(sfd, F_SETFL, O_NONBLOCK);
-    setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &true_val, sizeof(int));
+    freeaddrinfo(ai_list);
 
-    if (res_addr)
-    { *res_addr = *cur_ai; }
-    if (!should_bind) 
-    { return sfd; }
-    if (bind(sfd, cur_ai->ai_addr, cur_ai->ai_addrlen) == 0) 
-    { return sfd; }
-
-    close(sfd);
+    return 0;
   }
 
-  return -1;
+  return 1;
 }
 
-int create_dgram_socket(const char *address, const char *port, addrinfo *res_addr)
+
+int create_recv_socket(const char *port, sockaddr_in *res_sockaddr)
 {
   addrinfo hints;
   memset(&hints, 0, sizeof(addrinfo));
@@ -49,9 +49,25 @@ int create_dgram_socket(const char *address, const char *port, addrinfo *res_add
   int sfd = -1;
   addrinfo *ai_list = nullptr;
 
-  if (getaddrinfo(address, port, &hints, &ai_list) == 0)
+  if (getaddrinfo(nullptr, port, &hints, &ai_list) == 0)
   {
-    sfd = get_dgram_socket(ai_list, !address, res_addr);
+    for (addrinfo *cur_ai = ai_list; cur_ai != nullptr; cur_ai = cur_ai->ai_next)
+    {
+      sfd = socket(cur_ai->ai_family, cur_ai->ai_socktype, cur_ai->ai_protocol);
+      if (sfd == -1) 
+      { continue; }
+
+      if (res_sockaddr)
+      { *res_sockaddr = *((sockaddr_in *)cur_ai->ai_addr); }
+  
+      int true_val = 1;
+      fcntl(sfd, F_SETFL, O_NONBLOCK);
+      setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &true_val, sizeof(int));
+      if (bind(sfd, cur_ai->ai_addr, cur_ai->ai_addrlen) == 0) 
+      { break; }
+  
+      close(sfd);
+    }
 
     freeaddrinfo(ai_list);
   }

@@ -1,3 +1,4 @@
+#include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/select.h>
@@ -9,58 +10,61 @@
 #include <arpa/inet.h>
 
 #include "socket_tools.h"
+#include "settings.h"
+
 
 int main(int argc, const char **argv)
 {
-  const char *openPort = "2025";
+  int sockfd = -1;
 
-  int sfd = create_dgram_socket(nullptr, openPort, nullptr);
-
-  if (sfd == -1)
   {
-    printf("Cannot create a server socket!\n");
-    return 1;
+    const char *openPort = SERVER_PORT;
+    sockaddr_in serverSockaddrIn;
+
+    sockfd = create_recv_socket(openPort, &serverSockaddrIn);
+    if (sockfd == -1)
+    {
+      printf("Cannot create a server socket!\n");
+      return 1;
+    }
+
+    printf("Server at port %d. Listening...\n", ntohs(serverSockaddrIn.sin_port));
   }
 
-  printf("Server is on. Listening...\n");
 
 
   fd_set readSet;
   FD_ZERO(&readSet);
-  FD_SET(sfd, &readSet);
-
+  FD_SET(sockfd, &readSet);
   timeval timeout = { 0, 100000 }; // 100 ms
 
   char *buffer = new char[BUF_SIZE];
-  ssize_t recvRes = -1; 
-  ssize_t sendRes = -1; 
-  addrinfo clientAddrInfo;
+  ssize_t recvRes = -1;
+  ssize_t sendRes = -1;
 
-  sockaddr_in sin;
+  sockaddr_in senderSockaddrIn;
+  socklen_t senderSockaddrInLen = sizeof(sockaddr_in);
 
-
-  
   while (true)
   {
     fd_set tmpReadSet = readSet;
 
-    select(sfd + 1, &tmpReadSet, NULL, NULL, &timeout);
+    select(sockfd + 1, &tmpReadSet, NULL, NULL, &timeout);
 
 
-    if (FD_ISSET(sfd, &readSet))
+    if (FD_ISSET(sockfd, &readSet))
     { 
       recvRes = recvfrom(
-        sfd, buffer, BUF_SIZE, 
-        MSG_WAITALL, clientAddrInfo.ai_addr, &clientAddrInfo.ai_addrlen);
+        sockfd, buffer, BUF_SIZE, 
+        0, (sockaddr *)&senderSockaddrIn, &senderSockaddrInLen);
       if (recvRes > 0)
       {
-        sin = *((sockaddr_in*)clientAddrInfo.ai_addr);
-        
-        printf("(%s:%d) %s\n", inet_ntoa(sin.sin_addr), sin.sin_port, buffer); // assume that buffer is a string
+        printf("(%s:%d): %s", 
+          inet_ntoa(senderSockaddrIn.sin_addr), ntohs(senderSockaddrIn.sin_port), buffer);
 
         sendRes = sendto(
-          sfd, buffer, BUF_SIZE,
-          MSG_WAITALL, clientAddrInfo.ai_addr, clientAddrInfo.ai_addrlen);
+          sockfd, buffer, BUF_SIZE,
+          0, (sockaddr *)&senderSockaddrIn, senderSockaddrInLen);
         if (sendRes == -1)
         { 
           printf("%s", strerror(errno)); 
@@ -68,5 +72,6 @@ int main(int argc, const char **argv)
       }
     }
   }
+
   return 0;
 }
