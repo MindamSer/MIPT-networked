@@ -1,11 +1,12 @@
-#include "raylib.h"
+#include <raylib.h>
 #include <enet/enet.h>
+#include <cstring>
 #include <iostream>
 
 void send_fragmented_packet(ENetPeer *peer)
 {
   const char *baseMsg = "Stay awhile and listen. ";
-  const size_t msgLen = strlen(baseMsg);
+  const size_t msgLen = std::strlen(baseMsg);
 
   const size_t sendSize = 2500;
   char *hugeMessage = new char[sendSize];
