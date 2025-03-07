@@ -2,7 +2,10 @@
 #define WIN_W 800
 #define WIN_H 600
 #define WIN_BORD 100
-#define APP_FPS 60
+#define WIN_FPS 60
 
 #define LOBBY_ADDRESS "localhost"
-#define LOBBY_PORT 12345
+#define LOBBY_PORT 12001
+
+#define SERVER_ADDRESS "localhost"
+#define SERVER_PORT 12002

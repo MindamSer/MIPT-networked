@@ -1,54 +1,96 @@
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <enet/enet.h>
-#include <iostream>
+#include <stdio.h>
+#include <unordered_set>
 
 #include"settings.h"
 
+
+void sendAdressTo(ENetAddress *address, ENetPeer *peer)
+{
+  char *msg;
+  sprintf(msg, "%d %d", address->host, address->port);
+  ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
+  enet_peer_send(peer, 1, packet);
+
+  printf("sent server address to %x:%u\n", peer->address.host, peer->address.port);
+}
 
 int main(int argc, const char **argv)
 {
   if (enet_initialize() != 0)
   {
-    std::cout << "Cannot init ENet" << std::endl;
+    printf("Cannot init ENet\n");
     return 1;
   }
   atexit(enet_deinitialize);
-  std::cout << "ENet initialized" << std::endl;
+  printf("ENet initialized\n");
 
-
-  ENetAddress address;
-  ENetHost *lobby;
-
-  address.host = ENET_HOST_ANY;
-  address.port = LOBBY_PORT;
-  if (!(lobby = enet_host_create(&address, 32, 2, 0, 0)))
+  ENetHost *lobbyHost;
   {
-    std::cout << "Cannot create lobby" << std::endl;
-    return 1;
+    ENetAddress address;
+    address.host = ENET_HOST_ANY;
+    address.port = LOBBY_PORT;
+    
+    if (!(lobbyHost = enet_host_create(&address, 32, 2, 0, 0)))
+    {
+      printf("Cannot create lobby host\n");
+      return 1;
+    }
+    printf("ENet lobby host created\n");
   }
-  std::cout << "ENet host created" << std::endl;
+
+  ENetAddress serverAddress;
+  enet_address_set_host(&serverAddress, SERVER_ADDRESS);
+  serverAddress.port = SERVER_PORT;
   
+  printf("Lobby is active!\n");
 
-  std::cout << "Lobby is active!" << std::endl;
 
+
+  std::unordered_set<ENetPeer*> playerPool;
+  bool gameStarted = false;
+  ENetEvent event;
 
   while (true)
   {
-    ENetEvent event;
-    while (enet_host_service(lobby, &event, 10) > 0)
+    while (enet_host_service(lobbyHost, &event, 10) > 0)
     {
       switch (event.type)
       {
       case ENET_EVENT_TYPE_CONNECT:
         printf("%x:%u - connecion established\n", event.peer->address.host, event.peer->address.port);
+        
+        if(gameStarted)
+        {
+          sendAdressTo(&serverAddress, event.peer);
+        }
+        playerPool.insert(event.peer);
+
         break;
 
       case ENET_EVENT_TYPE_DISCONNECT:
         printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
+
+        playerPool.erase(event.peer);
+
         break;
 
       case ENET_EVENT_TYPE_RECEIVE:
-        printf("Packet received:\n'%s'\n", event.packet->data);
+        printf("%x:%u - packet received\n", event.peer->address.host, event.peer->address.port);
+        printf("Data:\n'%s'\n", event.packet->data);
+
+        printf("Redirecting players...\n");
+        for(ENetPeer *player : playerPool)
+        {
+          sendAdressTo(&serverAddress, player);
+        }
+        printf("Players redirected\n");
+        gameStarted = true;
+        printf("Game started\n");
+
         enet_packet_destroy(event.packet);
         break;
 
@@ -59,7 +101,7 @@ int main(int argc, const char **argv)
   }
 
 
-  enet_host_destroy(lobby);
+  enet_host_destroy(lobbyHost);
 
   return 0;
 }
