@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <enet/enet.h>
-#include <stdio.h>
+
 #include <unordered_set>
 
 #include"settings.h"
@@ -11,9 +11,9 @@
 void sendAdressTo(ENetAddress *address, ENetPeer *peer)
 {
   char *msg;
-  sprintf(msg, "%d %d", address->host, address->port);
+  sprintf(msg, "%u %hu", address->host, address->port);
   ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
-  enet_peer_send(peer, 1, packet);
+  enet_peer_send(peer, 0, packet);
 
   printf("sent server address to %x:%u\n", peer->address.host, peer->address.port);
 }
@@ -34,7 +34,7 @@ int main(int argc, const char **argv)
     address.host = ENET_HOST_ANY;
     address.port = LOBBY_PORT;
     
-    if (!(lobbyHost = enet_host_create(&address, 32, 2, 0, 0)))
+    if (!(lobbyHost = enet_host_create(&address, 32, 1, 0, 0)))
     {
       printf("Cannot create lobby host\n");
       return 1;
@@ -79,17 +79,28 @@ int main(int argc, const char **argv)
         break;
 
       case ENET_EVENT_TYPE_RECEIVE:
-        printf("%x:%u - packet received\n", event.peer->address.host, event.peer->address.port);
-        printf("Data:\n'%s'\n", event.packet->data);
+        printf("%x:%u - packet received: '%s'\n", event.peer->address.host, event.peer->address.port, event.packet->data);
 
-        printf("Redirecting players...\n");
-        for(ENetPeer *player : playerPool)
+        switch(event.channelID)
         {
-          sendAdressTo(&serverAddress, player);
+        case 0:
+          char *msgData;
+          sprintf(msgData, "%s", event.packet->data);
+          
+          if(strcmp(msgData, COMMAND_START))
+          {
+            printf("Redirecting players...\n");
+            for(ENetPeer *player : playerPool)
+            {
+              sendAdressTo(&serverAddress, player);
+            }
+            printf("Players redirected\n");
+            gameStarted = true;
+            printf("Game started\n");
+          }
+
+          break;
         }
-        printf("Players redirected\n");
-        gameStarted = true;
-        printf("Game started\n");
 
         enet_packet_destroy(event.packet);
         break;

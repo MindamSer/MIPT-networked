@@ -7,5 +7,7 @@
 #define LOBBY_ADDRESS "localhost"
 #define LOBBY_PORT 12001
 
+#define COMMAND_START "/START"
+
 #define SERVER_ADDRESS "localhost"
 #define SERVER_PORT 12002
