@@ -1,7 +1,19 @@
 #include <enet/enet.h>
 #include <stdio.h>
+#include <cstring>
 
 #include "settings.h"
+
+
+void sendPlayerInfoTo(ENetAddress *address, ENetPeer *peer)
+{
+  char *msg;
+  sprintf(msg, "%u %hu", address->host, address->port);
+  ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
+  enet_peer_send(peer, 1, packet);
+
+  printf("sent server address to %x:%u\n", peer->address.host, peer->address.port);
+}
 
 int main(int argc, const char **argv)
 {
@@ -19,7 +31,7 @@ int main(int argc, const char **argv)
     address.host = ENET_HOST_ANY;
     address.port = SERVER_PORT;
     
-    if (!(serverHost = enet_host_create(&address, 32, 2, 0, 0)))
+    if (!(serverHost = enet_host_create(&address, 32, 3, 0, 0)))
     {
       printf("Cannot create server host\n");
       return 1;
@@ -28,6 +40,8 @@ int main(int argc, const char **argv)
   }
   
   printf("Server is active!\n");
+
+
 
 
 
@@ -48,8 +62,7 @@ int main(int argc, const char **argv)
         break;
 
       case ENET_EVENT_TYPE_RECEIVE:
-        printf("%x:%u - packet received\n", event.peer->address.host, event.peer->address.port);
-        printf("Data:\n'%s'\n", event.packet->data);
+        printf("%x:%u - packet received: '%s'\n", event.peer->address.host, event.peer->address.port, event.packet->data);
         enet_packet_destroy(event.packet);
         break;
 
@@ -58,4 +71,9 @@ int main(int argc, const char **argv)
       };
     }
   }
+
+
+  enet_host_destroy(serverHost);
+
+  return 0;
 }

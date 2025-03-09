@@ -1,33 +1,34 @@
+#include <cstdint>
 #include <raylib.h>
 #include <enet/enet.h>
 #include <cstring>
 #include <iostream>
+#include <string.h>
 
-#include"settings.h"
+#include <map>
+#include <sys/types.h>
+
+#include "settings.h"
+#include "playerInfo.h"
 
 
-void send_fragmented_packet(ENetPeer *peer)
+void sendStartCommandTo(ENetPeer *peer)
 {
-  const char *baseMsg = "Stay awhile and listen. ";
-  const size_t msgLen = strlen(baseMsg);
-
-  const size_t sendSize = 2500;
-  char *hugeMessage = new char[sendSize];
-  for (size_t i = 0; i < sendSize; ++i)
-    hugeMessage[i] = baseMsg[i % msgLen];
-  hugeMessage[sendSize-1] = '\0';
-
-  ENetPacket *packet = enet_packet_create(hugeMessage, sendSize, ENET_PACKET_FLAG_RELIABLE);
+  const char *msg = COMMAND_START;
+  ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
   enet_peer_send(peer, 0, packet);
 
-  delete[] hugeMessage;
+  printf("Sent start command to %x:%u\n", peer->address.host, peer->address.port);
 }
 
-void send_micro_packet(ENetPeer *peer)
+void sendPositionTo(Vector2 *pos, ENetPeer *peer)
 {
-  const char *msg = "dv/dt";
-  ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_UNSEQUENCED);
-  enet_peer_send(peer, 1, packet);
+  char *msg;
+  sprintf(msg, "%f %f", pos->x, pos->y);
+  ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
+  enet_peer_send(peer, 2, packet);
+
+  printf("Sent position to %x:%u\n", peer->address.host, peer->address.port);
 }
 
 int main(int argc, const char **argv)
@@ -46,7 +47,7 @@ int main(int argc, const char **argv)
       SetWindowSize(width, height);
     }
 
-    SetTargetFPS(APP_FPS);
+    SetTargetFPS(WIN_FPS);
   }
   std::cout << "Window initialized" << std::endl;
 
@@ -60,90 +61,152 @@ int main(int argc, const char **argv)
   std::cout << "ENet initialized" << std::endl;
 
 
-  ENetHost *client = enet_host_create(nullptr, 1, 2, 0, 0);
-  if (!client)
+  ENetHost *clientHost = enet_host_create(nullptr, 2, 3, 0, 0);
+  if (!clientHost)
   {
-    std::cout << "Cannot create ENet client" << std::endl;
+    std::cout << "Cannot create client host" << std::endl;
     return 1;
   }
-  std::cout << "ENet client created" << std::endl;
+  std::cout << "ENet client host created" << std::endl;
 
 
-  ENetAddress address;
   ENetPeer *lobbyPeer;
-
-  enet_address_set_host(&address, LOBBY_ADDRESS);
-  address.port = LOBBY_PORT;
-  if (!(lobbyPeer = enet_host_connect(client, &address, 2, 0)))
+  ENetPeer *serverPeer;
   {
-    std::cout << "Cannot connect to lobby" << std::endl;
-    return 1;
+    ENetAddress address;
+    enet_address_set_host(&address, LOBBY_ADDRESS);
+    address.port = LOBBY_PORT;
+    if (!(lobbyPeer = enet_host_connect(clientHost, &address, 1, 0)))
+    {
+      std::cout << "Cannot connect to lobby" << std::endl;
+      return 1;
+    }
+    std::cout << "Connected to lobby" << std::endl;
   }
-  std::cout << "Connected to lobby" << std::endl;
+
+  printf("Client is active!\n");
+
 
 
   uint32_t timeStart = enet_time_get();
-  uint32_t lastFragmentedSendTime = timeStart;
-  uint32_t lastMicroSendTime = timeStart;
+  Vector2 position;
+  {
+    float posx = GetRandomValue(50, width  - 50);
+    float posy = GetRandomValue(50, height - 50);
+    position = {posx, posy};
+  }
+  Vector2 velocity = {0.f, 0.f};
   bool connected = false;
-  float posx = GetRandomValue(50, width - 50);
-  float posy = GetRandomValue(50, height - 50);
-  float velx = 0.f;
-  float vely = 0.f;
+
+  std::map<uint32_t, PlayerInfo> playerList;
 
 
   while (!WindowShouldClose())
   {
     const float dt = GetFrameTime();
+    
     ENetEvent event;
-    while (enet_host_service(client, &event, 10) > 0)
+    while (enet_host_service(clientHost, &event, 10) > 0)
     {
       switch (event.type)
       {
       case ENET_EVENT_TYPE_CONNECT:
-        printf("Connection with %x:%u established\n", event.peer->address.host, event.peer->address.port);
-        connected = true;
+        printf("%x:%u - connecion established\n", event.peer->address.host, event.peer->address.port);
         break;
+
+      case ENET_EVENT_TYPE_DISCONNECT:
+        printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
+        break;
+
       case ENET_EVENT_TYPE_RECEIVE:
-        printf("Packet received '%s'\n", event.packet->data);
+        printf("%x:%u - packet received: '%s'\n", event.peer->address.host, event.peer->address.port, event.packet->data);
+
+        char *msgData;
+        sprintf(msgData, "%s", event.packet->data);
+        switch(event.channelID)
+        {
+        case 0:
+          {
+            std::cout << "Got server address, connecting..." << std::endl;
+  
+            ENetAddress address;
+            sscanf(msgData, "%u %hu", &address.host, &address.port);
+            if (!(serverPeer = enet_host_connect(clientHost, &address, 3, 0)))
+            {
+              std::cout << "Cannot connect to server" << std::endl;
+              return 1;
+            }
+            connected = true;
+            std::cout << "Connected to server" << std::endl;
+          }
+          break;
+        case 1:
+          {
+            if (msgData[0] == 'c')
+            {
+              uint32_t playerID;
+              char *nickname;
+              sscanf(msgData+2, "%u %s", &playerID, nickname);
+
+              printf("New player added \"%s\" (ID %u)\n", nickname, playerID);
+              playerList.insert_or_assign(playerID, PlayerInfo{nickname, {}, 0});
+            }
+            if (msgData[0] == 'd')
+            {
+              uint32_t playerID;
+              sscanf(msgData+2, "%u", &playerID);
+
+              printf("Deleting player \"%s\" (ID %u)\n", playerList[playerID].nickname.c_str(), playerID);
+              playerList.erase(playerID);
+            }
+          }
+          break;
+        case 2:
+          {
+            uint32_t playerID;
+            float x, y;
+            sscanf(msgData, "%u %f %f", &playerID, &x, &y);
+
+            auto &playerPos = playerList[playerID].pos;
+            playerPos.x = x;
+            playerPos.y = y;
+          }
+          break;
+        }
+
         enet_packet_destroy(event.packet);
         break;
+
       default:
         break;
       };
     }
-    if (false)
+
+    if(!connected && IsKeyPressed(KEY_ENTER))
     {
-      uint32_t curTime = enet_time_get();
-      if (curTime - lastFragmentedSendTime > 1000)
-      {
-        lastFragmentedSendTime = curTime;
-        send_fragmented_packet(lobbyPeer);
-      }
-      if (curTime - lastMicroSendTime > 100)
-      {
-        lastMicroSendTime = curTime;
-        send_micro_packet(lobbyPeer);
-      }
+      sendStartCommandTo(lobbyPeer);
     }
+
+    
     bool left = IsKeyDown(KEY_LEFT);
     bool right = IsKeyDown(KEY_RIGHT);
     bool up = IsKeyDown(KEY_UP);
     bool down = IsKeyDown(KEY_DOWN);
     constexpr float accel = 150.f;
-    velx += ((left ? -1.f : 0.f) + (right ? 1.f : 0.f)) * dt * accel;
-    vely += ((up ? -1.f : 0.f) + (down ? 1.f : 0.f)) * dt * accel;
-    posx += velx * dt;
-    posy += vely * dt;
-    velx *= 0.99f;
-    vely *= 0.99f;
+    velocity.x += ((left * -1.f) + (right * 1.f)) * dt * accel;
+    velocity.y += ((up   * -1.f) + (down  * 1.f)) * dt * accel;
+
+    position.x += velocity.x * dt;
+    position.y += velocity.y * dt;
+    velocity.x *= 0.99f;
+    velocity.y *= 0.99f;
 
     BeginDrawing();
       ClearBackground(BLACK);
-      DrawText(TextFormat("Current status: %s", "unknown"), 20, 20, 20, WHITE);
-      DrawText(TextFormat("My position: (%d, %d)", (int)posx, (int)posy), 20, 40, 20, WHITE);
+      DrawText(TextFormat("Current status: %s", !connected ? "lobby" : "server"), 20, 20, 20, WHITE);
+      DrawText(TextFormat("My position: (%d, %d)", (int)position.x, (int)position.y), 20, 40, 20, WHITE);
       DrawText("List of players:", 20, 60, 20, WHITE);
-      DrawCircleV(Vector2{posx, posy}, 10.f, WHITE);
+      DrawCircleV(Vector2{position.x, position.y}, 10.f, WHITE);
     EndDrawing();
   }
 
