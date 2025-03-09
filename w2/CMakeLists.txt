@@ -38,7 +38,7 @@ target_link_libraries(w2_lobby PUBLIC enet)
 
 add_executable(w2_server ${W2_SERVER_SOURCES})
 target_link_libraries(w2_server PUBLIC project_options project_warnings)
-target_link_libraries(w2_server PUBLIC enet)
+target_link_libraries(w2_server PUBLIC raylib enet)
 
 if(MSVC)
   target_link_libraries(w2_client PUBLIC ws2_32.lib winmm.lib)

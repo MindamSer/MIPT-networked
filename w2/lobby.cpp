@@ -72,18 +72,16 @@ int main(int argc, const char **argv)
             sendAdressTo(&serverAddress, event.peer);
           }
           playerPool.insert(event.peer);
-  
-          break;
         }
+        break;
 
       case ENET_EVENT_TYPE_DISCONNECT:
         {
           printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
 
           playerPool.erase(event.peer);
-  
-          break;
         }
+        break;
 
       case ENET_EVENT_TYPE_RECEIVE:
         {
@@ -92,31 +90,21 @@ int main(int argc, const char **argv)
           char *msgData;
           sprintf(msgData, "%s", event.packet->data);
 
-          switch(event.channelID)
+          if(!strcmp(msgData, COMMAND_START))
           {
-          case 0:
+            printf("Redirecting players...\n");
+            for(ENetPeer *player : playerPool)
             {
-              if(strcmp(msgData, COMMAND_START))
-              {
-                printf("Redirecting players...\n");
-                for(ENetPeer *player : playerPool)
-                {
-                  sendAdressTo(&serverAddress, player);
-                }
-                printf("Players redirected\n");
-                gameStarted = true;
-                printf("Game started\n");
-              }
-              break;
+              sendAdressTo(&serverAddress, player);
             }
-
-          default:
-            break;
+            printf("Players redirected\n");
+            gameStarted = true;
+            printf("Game started\n");
           }
   
           enet_packet_destroy(event.packet);
-          break;
         }
+        break;
 
       default:
         break;

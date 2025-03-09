@@ -19,10 +19,10 @@ void sendStartCommandTo(ENetPeer *peer)
   printf("Sent start command to %x:%u\n", peer->address.host, peer->address.port);
 }
 
-void sendPositionTo(Vector2 *pos, ENetPeer *peer)
+void sendIdPositionTo(uint32_t id, Vector2 *pos, ENetPeer *peer)
 {
   char *msg;
-  sprintf(msg, "%f %f", pos->x, pos->y);
+  sprintf(msg, "%u %f %f", id, pos->x, pos->y);
   ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
   enet_peer_send(peer, 2, packet);
 
@@ -98,6 +98,8 @@ int main(int argc, const char **argv)
   bool connected = false;
 
   std::map<uint32_t, PlayerInfo> playerList;
+  uint32_t idOnServer = -1;
+
 
 
   ENetEvent event;
@@ -110,16 +112,12 @@ int main(int argc, const char **argv)
       switch (event.type)
       {
       case ENET_EVENT_TYPE_CONNECT:
-        {
-          printf("%x:%u - connecion established\n", event.peer->address.host, event.peer->address.port);
-          break;
-        }
+        printf("%x:%u - connecion established\n", event.peer->address.host, event.peer->address.port);
+        break;
 
       case ENET_EVENT_TYPE_DISCONNECT:
-        {
-          printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
-          break;
-        }
+        printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
+        break;
 
       case ENET_EVENT_TYPE_RECEIVE:
         {
@@ -132,20 +130,28 @@ int main(int argc, const char **argv)
           {
           case 0:
             {
-              std::cout << "Got server address, connecting..." << std::endl;
-    
-              ENetAddress address;
-              sscanf(msgData, "%u %hu", &address.host, &address.port);
-              if (!(serverPeer = enet_host_connect(clientHost, &address, 3, 0)))
+              if (connected)
               {
-                std::cout << "Cannot connect to server" << std::endl;
-                return 1;
+                sscanf(msgData, "%u", &idOnServer);
+                playerList.insert_or_assign(idOnServer, PlayerInfo{nullptr, "me", {}, 0});
               }
-              connected = true;
-  
-              std::cout << "Connected to server" << std::endl;
-              break;
+              else
+              {
+                std::cout << "Got server address, connecting..." << std::endl;
+    
+                ENetAddress address;
+                sscanf(msgData, "%u %hu", &address.host, &address.port);
+                if (!(serverPeer = enet_host_connect(clientHost, &address, 3, 0)))
+                {
+                  std::cout << "Cannot connect to server" << std::endl;
+                  return 1;
+                }
+                connected = true;
+    
+                std::cout << "Connected to server" << std::endl;
+              }
             }
+            break;
   
           case 1:
             {
@@ -155,8 +161,8 @@ int main(int argc, const char **argv)
                 char *nickname;
                 sscanf(msgData+2, "%u %s", &playerID, nickname);
   
-                printf("Addinf player \"%s\" (ID %u)\n", nickname, playerID);
-                playerList.insert_or_assign(playerID, PlayerInfo{nickname, {}, 0});
+                printf("Adding player \"%s\" (ID %u)\n", nickname, playerID);
+                playerList.insert_or_assign(playerID, PlayerInfo{nullptr, nickname, {}, 0});
               }
               if (msgData[0] == 'd')
               {
@@ -166,8 +172,8 @@ int main(int argc, const char **argv)
                 printf("Deleting player \"%s\" (ID %u)\n", playerList[playerID].nickname.c_str(), playerID);
                 playerList.erase(playerID);
               }
-              break;
             }
+            break;
 
           case 2:
             {
@@ -179,28 +185,22 @@ int main(int argc, const char **argv)
               playerInfo.pos.x = x;
               playerInfo.pos.y = y;
               playerInfo.ping = ping;
-              break;
             }
+            break;
 
           default:
             break;
           }
   
           enet_packet_destroy(event.packet);
-          break;
         }
+        break;
 
       default:
         break;
       };
     }
 
-    if(!connected && IsKeyPressed(KEY_ENTER))
-    {
-      sendStartCommandTo(lobbyPeer);
-    }
-
-    
     {
       bool left = IsKeyDown(KEY_LEFT);
       bool right = IsKeyDown(KEY_RIGHT);
@@ -216,14 +216,30 @@ int main(int argc, const char **argv)
       velocity.y *= 0.99f;
     }
 
+    if(connected && idOnServer != -1)
+    {
+      sendIdPositionTo(idOnServer, &position, serverPeer);
+    }
+    else
+    {
+      if (IsKeyPressed(KEY_ENTER))
+        sendStartCommandTo(lobbyPeer);
+    }
+
 
     BeginDrawing();
     {
       ClearBackground(BLACK);
-      DrawText(TextFormat("Current status: %s", !connected ? "lobby" : "server"), 20, 10, 10, WHITE);
+      DrawText(TextFormat("Current status: %s", idOnServer == -1 ? "lobby" : "server"), 20, 10, 10, WHITE);
       DrawText(TextFormat("My position: (%d, %d)", (int)position.x, (int)position.y), 20, 20, 10, WHITE);
       DrawText("List of players:", 20, 30, 10, WHITE);
-      DrawCircleV(Vector2{position.x, position.y}, 10.f, WHITE);
+      int i = 0;
+      for(auto IDPI : playerList)
+      {
+        DrawText(IDPI.second.nickname.c_str(), 20, 40 + 10 * i, 10, WHITE);
+        DrawCircleV(Vector2{IDPI.second.pos.x, IDPI.second.pos.y}, 10.f, WHITE);
+        ++i;
+      }
     }
     EndDrawing();
   }
