@@ -1,12 +1,10 @@
 #include <cstdint>
-#include <raylib.h>
-#include <enet/enet.h>
 #include <cstring>
 #include <iostream>
-#include <string.h>
+#include <enet/enet.h>
+#include <raylib.h>
 
 #include <map>
-#include <sys/types.h>
 
 #include "settings.h"
 #include "playerInfo.h"
@@ -30,6 +28,7 @@ void sendPositionTo(Vector2 *pos, ENetPeer *peer)
 
   printf("Sent position to %x:%u\n", peer->address.host, peer->address.port);
 }
+
 
 int main(int argc, const char **argv)
 {
@@ -101,81 +100,95 @@ int main(int argc, const char **argv)
   std::map<uint32_t, PlayerInfo> playerList;
 
 
+  ENetEvent event;
   while (!WindowShouldClose())
   {
     const float dt = GetFrameTime();
     
-    ENetEvent event;
     while (enet_host_service(clientHost, &event, 10) > 0)
     {
       switch (event.type)
       {
       case ENET_EVENT_TYPE_CONNECT:
-        printf("%x:%u - connecion established\n", event.peer->address.host, event.peer->address.port);
-        break;
-
-      case ENET_EVENT_TYPE_DISCONNECT:
-        printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
-        break;
-
-      case ENET_EVENT_TYPE_RECEIVE:
-        printf("%x:%u - packet received: '%s'\n", event.peer->address.host, event.peer->address.port, event.packet->data);
-
-        char *msgData;
-        sprintf(msgData, "%s", event.packet->data);
-        switch(event.channelID)
         {
-        case 0:
-          {
-            std::cout << "Got server address, connecting..." << std::endl;
-  
-            ENetAddress address;
-            sscanf(msgData, "%u %hu", &address.host, &address.port);
-            if (!(serverPeer = enet_host_connect(clientHost, &address, 3, 0)))
-            {
-              std::cout << "Cannot connect to server" << std::endl;
-              return 1;
-            }
-            connected = true;
-            std::cout << "Connected to server" << std::endl;
-          }
-          break;
-        case 1:
-          {
-            if (msgData[0] == 'c')
-            {
-              uint32_t playerID;
-              char *nickname;
-              sscanf(msgData+2, "%u %s", &playerID, nickname);
-
-              printf("New player added \"%s\" (ID %u)\n", nickname, playerID);
-              playerList.insert_or_assign(playerID, PlayerInfo{nickname, {}, 0});
-            }
-            if (msgData[0] == 'd')
-            {
-              uint32_t playerID;
-              sscanf(msgData+2, "%u", &playerID);
-
-              printf("Deleting player \"%s\" (ID %u)\n", playerList[playerID].nickname.c_str(), playerID);
-              playerList.erase(playerID);
-            }
-          }
-          break;
-        case 2:
-          {
-            uint32_t playerID;
-            float x, y;
-            sscanf(msgData, "%u %f %f", &playerID, &x, &y);
-
-            auto &playerPos = playerList[playerID].pos;
-            playerPos.x = x;
-            playerPos.y = y;
-          }
+          printf("%x:%u - connecion established\n", event.peer->address.host, event.peer->address.port);
           break;
         }
 
-        enet_packet_destroy(event.packet);
-        break;
+      case ENET_EVENT_TYPE_DISCONNECT:
+        {
+          printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
+          break;
+        }
+
+      case ENET_EVENT_TYPE_RECEIVE:
+        {
+          printf("%x:%u - packet received: '%s'\n", event.peer->address.host, event.peer->address.port, event.packet->data);
+
+          char *msgData;
+          sprintf(msgData, "%s", event.packet->data);
+
+          switch(event.channelID)
+          {
+          case 0:
+            {
+              std::cout << "Got server address, connecting..." << std::endl;
+    
+              ENetAddress address;
+              sscanf(msgData, "%u %hu", &address.host, &address.port);
+              if (!(serverPeer = enet_host_connect(clientHost, &address, 3, 0)))
+              {
+                std::cout << "Cannot connect to server" << std::endl;
+                return 1;
+              }
+              connected = true;
+  
+              std::cout << "Connected to server" << std::endl;
+              break;
+            }
+  
+          case 1:
+            {
+              if (msgData[0] == 'c')
+              {
+                uint32_t playerID;
+                char *nickname;
+                sscanf(msgData+2, "%u %s", &playerID, nickname);
+  
+                printf("Addinf player \"%s\" (ID %u)\n", nickname, playerID);
+                playerList.insert_or_assign(playerID, PlayerInfo{nickname, {}, 0});
+              }
+              if (msgData[0] == 'd')
+              {
+                uint32_t playerID;
+                sscanf(msgData+2, "%u", &playerID);
+  
+                printf("Deleting player \"%s\" (ID %u)\n", playerList[playerID].nickname.c_str(), playerID);
+                playerList.erase(playerID);
+              }
+              break;
+            }
+
+          case 2:
+            {
+              uint32_t playerID, ping;
+              float x, y;
+              sscanf(msgData, "%u %f %f %u", &playerID, &x, &y, &ping);
+  
+              auto &playerInfo = playerList[playerID];
+              playerInfo.pos.x = x;
+              playerInfo.pos.y = y;
+              playerInfo.ping = ping;
+              break;
+            }
+
+          default:
+            break;
+          }
+  
+          enet_packet_destroy(event.packet);
+          break;
+        }
 
       default:
         break;
@@ -188,25 +201,30 @@ int main(int argc, const char **argv)
     }
 
     
-    bool left = IsKeyDown(KEY_LEFT);
-    bool right = IsKeyDown(KEY_RIGHT);
-    bool up = IsKeyDown(KEY_UP);
-    bool down = IsKeyDown(KEY_DOWN);
-    constexpr float accel = 150.f;
-    velocity.x += ((left * -1.f) + (right * 1.f)) * dt * accel;
-    velocity.y += ((up   * -1.f) + (down  * 1.f)) * dt * accel;
+    {
+      bool left = IsKeyDown(KEY_LEFT);
+      bool right = IsKeyDown(KEY_RIGHT);
+      bool up = IsKeyDown(KEY_UP);
+      bool down = IsKeyDown(KEY_DOWN);
+      constexpr float accel = 150.f;
+      velocity.x += ((left * -1.f) + (right * 1.f)) * dt * accel;
+      velocity.y += ((up   * -1.f) + (down  * 1.f)) * dt * accel;
+  
+      position.x += velocity.x * dt;
+      position.y += velocity.y * dt;
+      velocity.x *= 0.99f;
+      velocity.y *= 0.99f;
+    }
 
-    position.x += velocity.x * dt;
-    position.y += velocity.y * dt;
-    velocity.x *= 0.99f;
-    velocity.y *= 0.99f;
 
     BeginDrawing();
+    {
       ClearBackground(BLACK);
-      DrawText(TextFormat("Current status: %s", !connected ? "lobby" : "server"), 20, 20, 20, WHITE);
-      DrawText(TextFormat("My position: (%d, %d)", (int)position.x, (int)position.y), 20, 40, 20, WHITE);
-      DrawText("List of players:", 20, 60, 20, WHITE);
+      DrawText(TextFormat("Current status: %s", !connected ? "lobby" : "server"), 20, 10, 10, WHITE);
+      DrawText(TextFormat("My position: (%d, %d)", (int)position.x, (int)position.y), 20, 20, 10, WHITE);
+      DrawText("List of players:", 20, 30, 10, WHITE);
       DrawCircleV(Vector2{position.x, position.y}, 10.f, WHITE);
+    }
     EndDrawing();
   }
 

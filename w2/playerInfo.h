@@ -2,11 +2,11 @@
 
 #include <string>
 #include <raylib.h>
-#include <sys/types.h>
+#include <cstdint>
 
 struct PlayerInfo
 {
     std::string nickname;
     Vector2 pos;
-    u_int8_t ping;
+    uint8_t ping;
 };

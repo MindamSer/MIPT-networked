@@ -5,7 +5,7 @@
 
 #include <unordered_set>
 
-#include"settings.h"
+#include "settings.h"
 
 
 void sendAdressTo(ENetAddress *address, ENetPeer *peer)
@@ -15,8 +15,9 @@ void sendAdressTo(ENetAddress *address, ENetPeer *peer)
   ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
   enet_peer_send(peer, 0, packet);
 
-  printf("sent server address to %x:%u\n", peer->address.host, peer->address.port);
+  printf("Sent server address to %x:%u\n", peer->address.host, peer->address.port);
 }
+
 
 int main(int argc, const char **argv)
 {
@@ -28,6 +29,7 @@ int main(int argc, const char **argv)
   atexit(enet_deinitialize);
   printf("ENet initialized\n");
 
+
   ENetHost *lobbyHost;
   {
     ENetAddress address;
@@ -36,11 +38,12 @@ int main(int argc, const char **argv)
     
     if (!(lobbyHost = enet_host_create(&address, 32, 1, 0, 0)))
     {
-      printf("Cannot create lobby host\n");
+      printf("Cannot create ENet lobby host\n");
       return 1;
     }
     printf("ENet lobby host created\n");
   }
+
 
   ENetAddress serverAddress;
   enet_address_set_host(&serverAddress, SERVER_ADDRESS);
@@ -52,8 +55,8 @@ int main(int argc, const char **argv)
 
   std::unordered_set<ENetPeer*> playerPool;
   bool gameStarted = false;
-  ENetEvent event;
 
+  ENetEvent event;
   while (true)
   {
     while (enet_host_service(lobbyHost, &event, 10) > 0)
@@ -61,49 +64,59 @@ int main(int argc, const char **argv)
       switch (event.type)
       {
       case ENET_EVENT_TYPE_CONNECT:
-        printf("%x:%u - connecion established\n", event.peer->address.host, event.peer->address.port);
+        {
+          printf("%x:%u - connecion established\n", event.peer->address.host, event.peer->address.port);
         
-        if(gameStarted)
-        {
-          sendAdressTo(&serverAddress, event.peer);
-        }
-        playerPool.insert(event.peer);
-
-        break;
-
-      case ENET_EVENT_TYPE_DISCONNECT:
-        printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
-
-        playerPool.erase(event.peer);
-
-        break;
-
-      case ENET_EVENT_TYPE_RECEIVE:
-        printf("%x:%u - packet received: '%s'\n", event.peer->address.host, event.peer->address.port, event.packet->data);
-
-        switch(event.channelID)
-        {
-        case 0:
-          char *msgData;
-          sprintf(msgData, "%s", event.packet->data);
-          
-          if(strcmp(msgData, COMMAND_START))
+          if(gameStarted)
           {
-            printf("Redirecting players...\n");
-            for(ENetPeer *player : playerPool)
-            {
-              sendAdressTo(&serverAddress, player);
-            }
-            printf("Players redirected\n");
-            gameStarted = true;
-            printf("Game started\n");
+            sendAdressTo(&serverAddress, event.peer);
           }
-
+          playerPool.insert(event.peer);
+  
           break;
         }
 
-        enet_packet_destroy(event.packet);
-        break;
+      case ENET_EVENT_TYPE_DISCONNECT:
+        {
+          printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
+
+          playerPool.erase(event.peer);
+  
+          break;
+        }
+
+      case ENET_EVENT_TYPE_RECEIVE:
+        {
+          printf("%x:%u - packet received: '%s'\n", event.peer->address.host, event.peer->address.port, event.packet->data);
+
+          char *msgData;
+          sprintf(msgData, "%s", event.packet->data);
+
+          switch(event.channelID)
+          {
+          case 0:
+            {
+              if(strcmp(msgData, COMMAND_START))
+              {
+                printf("Redirecting players...\n");
+                for(ENetPeer *player : playerPool)
+                {
+                  sendAdressTo(&serverAddress, player);
+                }
+                printf("Players redirected\n");
+                gameStarted = true;
+                printf("Game started\n");
+              }
+              break;
+            }
+
+          default:
+            break;
+          }
+  
+          enet_packet_destroy(event.packet);
+          break;
+        }
 
       default:
         break;
