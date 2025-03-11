@@ -16,7 +16,7 @@ void sendIDTo(uint32_t id, ENetPeer *peer)
   ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
   enet_peer_send(peer, 0, packet);
 
-  printf("Assigned ID to %x:%u\n", peer->address.host, peer->address.port);
+  printf("Assigned ID %u to %x:%u\n", id, peer->address.host, peer->address.port);
 }
 
 void sendNewPlayerTo(uint32_t id, PlayerInfo *playerInfo, ENetPeer *peer)
@@ -42,7 +42,7 @@ void sendDelPlayerTo(uint32_t id, ENetPeer *peer)
 void sendPlayerInfoTo(uint32_t id, PlayerInfo *playerInfo, ENetPeer *peer)
 {
   char *msg;
-  sprintf(msg, "%u %f %f %u", id, playerInfo->pos.x, playerInfo->pos.y, playerInfo->ping);
+  sprintf(msg, "%u %f %f %hu", id, playerInfo->pos.x, playerInfo->pos.y, playerInfo->ping);
   ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT);
   enet_peer_send(peer, 2, packet);
 
@@ -54,9 +54,11 @@ uint32_t getPlayerId(uint32_t port)
   return port;
 }
 
-void getPlayerName(char *nickname, uint32_t id)
+std::string getPlayerName(uint32_t id)
 {
-  sprintf(nickname, "jab-jabych#%u", id);
+  char *newNickname;
+  sprintf(newNickname, "jab-jabych##%u", id);
+  return std::string(newNickname);
 }
 
 
@@ -106,17 +108,16 @@ int main(int argc, const char **argv)
           printf("%x:%u - connecion established\n", event.peer->address.host, event.peer->address.port);
           
           uint32_t newID = getPlayerId(event.peer->address.port);
-          char *newNickname;
-          getPlayerName(newNickname, newID);
-          PlayerInfo newPI = {event.peer, newNickname, {}, 0};
-
-          sendIDTo(newID, event.peer);
+          PlayerInfo newPI = {event.peer, getPlayerName(newID).c_str(), {}, 0};
+          
           for(auto IDplayerInfo : playerList)
           {
-            sendNewPlayerTo(IDplayerInfo.first, &IDplayerInfo.second, event.peer);
             sendNewPlayerTo(newID, &newPI, IDplayerInfo.second.peer);
+            sendNewPlayerTo(IDplayerInfo.first, &IDplayerInfo.second, event.peer);
           }
+          
           playerList.insert_or_assign(newID, newPI);
+          sendIDTo(newID, event.peer);
         }
         break;
 
@@ -125,11 +126,11 @@ int main(int argc, const char **argv)
           printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
 
           uint32_t delID = getPlayerId(event.peer->address.port);
+          playerList.erase(delID);
           for(auto IDplayerInfo : playerList)
           {
             sendDelPlayerTo(delID, event.peer);
           }
-          playerList.erase(delID);
         }
         break;
 

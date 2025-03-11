@@ -100,6 +100,8 @@ int main(int argc, const char **argv)
   std::map<uint32_t, PlayerInfo> playerList;
   uint32_t idOnServer = -1;
 
+  playerList.insert_or_assign(idOnServer, PlayerInfo{nullptr, "me", {}, 0});
+
 
 
   ENetEvent event;
@@ -121,7 +123,7 @@ int main(int argc, const char **argv)
 
       case ENET_EVENT_TYPE_RECEIVE:
         {
-          printf("%x:%u - packet received: '%s'\n", event.peer->address.host, event.peer->address.port, event.packet->data);
+          printf("%x:%u - packet received: '%s'\nchannel %d\n", event.peer->address.host, event.peer->address.port, event.packet->data,event.channelID);
 
           char *msgData;
           sprintf(msgData, "%s", event.packet->data);
@@ -132,13 +134,15 @@ int main(int argc, const char **argv)
             {
               if (connected)
               {
+                playerList.erase(idOnServer);
                 sscanf(msgData, "%u", &idOnServer);
                 playerList.insert_or_assign(idOnServer, PlayerInfo{nullptr, "me", {}, 0});
+                printf("Got id from server: %u\n", idOnServer);
               }
               else
               {
                 std::cout << "Got server address, connecting..." << std::endl;
-    
+                
                 ENetAddress address;
                 sscanf(msgData, "%u %hu", &address.host, &address.port);
                 if (!(serverPeer = enet_host_connect(clientHost, &address, 3, 0)))
@@ -222,7 +226,11 @@ int main(int argc, const char **argv)
     }
     else
     {
-      if (IsKeyPressed(KEY_ENTER))
+      playerList[idOnServer].pos = position;
+    }
+
+    if (!connected && IsKeyPressed(KEY_ENTER))
+    {
         sendStartCommandTo(lobbyPeer);
     }
 
@@ -234,10 +242,14 @@ int main(int argc, const char **argv)
       DrawText(TextFormat("My position: (%d, %d)", (int)position.x, (int)position.y), 20, 20, 10, WHITE);
       DrawText("List of players:", 20, 30, 10, WHITE);
       int i = 0;
+      Color color;
+      char* playerLine;
       for(auto IDPI : playerList)
       {
-        DrawText(IDPI.second.nickname.c_str(), 20, 40 + 10 * i, 10, WHITE);
-        DrawCircleV(Vector2{IDPI.second.pos.x, IDPI.second.pos.y}, 10.f, WHITE);
+        sprintf(playerLine, "%s %hu", IDPI.second.nickname.c_str(), IDPI.second.ping);
+        color = IDPI.first == idOnServer ? RED : WHITE;
+        DrawText(playerLine, 20, 40 + 10 * i, 10, color);
+        DrawCircleV(Vector2{IDPI.second.pos.x, IDPI.second.pos.y}, 10.f, color);
         ++i;
       }
     }
