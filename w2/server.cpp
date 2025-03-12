@@ -41,6 +41,16 @@ void sendDelPlayerTo(uint32_t id, ENetPeer *peer)
     peer->address.host, peer->address.port);
 }
 
+void sendPingTo(ENetPeer *peer)
+{
+  std::string msg = std::format("p");
+  ENetPacket *packet = enet_packet_create(msg.c_str(), msg.size() + 1, ENET_PACKET_FLAG_RELIABLE);
+  enet_peer_send(peer, 1, packet);
+
+  printf("Sent ping to %x:%u\n", 
+    peer->address.host, peer->address.port);
+}
+
 void sendPlayerInfoTo(uint32_t id, PlayerInfo *playerInfo, ENetPeer *peer)
 {
   std::string msg = std::format("{} {} {} {}", id, playerInfo->pos.x, playerInfo->pos.y, playerInfo->ping);
@@ -152,16 +162,20 @@ int main(int argc, const char **argv)
           case 0:
             break;
           case 1:
+            {
+              sendPingTo(event.peer);
+            }
             break;
           case 2:
             {
-              uint32_t playerID;
+              uint32_t playerID, ping;
               float x, y;
-              sscanf(msgData, "%u %f %f", &playerID, &x, &y);
+              sscanf(msgData, "%u %f %f %u", &playerID, &x, &y, &ping);
 
               auto &playerToUpdate = playerList[playerID];
               playerToUpdate.pos.x = x;
               playerToUpdate.pos.y = y;
+              playerToUpdate.ping = ping;
               for(auto IDplayerInfo : playerList)
               {
                 sendPlayerInfoTo(playerID, &playerToUpdate, IDplayerInfo.second.peer);

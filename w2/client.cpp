@@ -21,13 +21,23 @@ void sendStartCommandTo(ENetPeer *peer)
     peer->address.host, peer->address.port);
 }
 
-void sendIdPositionTo(uint32_t id, Vector2 *pos, ENetPeer *peer)
+void sendPingTo(ENetPeer *peer)
 {
-  std::string msg = std::format("{} {} {}", id, pos->x, pos->y);
-  ENetPacket *packet = enet_packet_create(msg.c_str(), msg.size() + 1, ENET_PACKET_FLAG_RELIABLE);
+  std::string msg = " ";
+  ENetPacket *packet = enet_packet_create(msg.c_str(), msg.size() + 1, ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT);
+  enet_peer_send(peer, 1, packet);
+
+  printf("Sent ping to %x:%u\n", 
+    peer->address.host, peer->address.port);
+}
+
+void sendIdPlInfoTo(uint32_t id, PlayerInfo *playerInfo, ENetPeer *peer)
+{
+  std::string msg = std::format("{} {} {} {}", id, playerInfo->pos.x, playerInfo->pos.y, playerInfo->ping);
+  ENetPacket *packet = enet_packet_create(msg.c_str(), msg.size() + 1, ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT);
   enet_peer_send(peer, 2, packet);
 
-  printf("Sent position to %x:%u\n", 
+  printf("Sent info to %x:%u\n", 
     peer->address.host, peer->address.port);
 }
 
@@ -98,6 +108,7 @@ int main(int argc, const char **argv)
   }
   Vector2 velocity = {0.f, 0.f};
   bool connected = false;
+  uint8_t msSincePing = 1;
 
   std::map<uint32_t, PlayerInfo> playerList;
   uint32_t idOnServer = -1;
@@ -141,6 +152,8 @@ int main(int argc, const char **argv)
                 sscanf(msgData, "%u", &idOnServer);
                 playerList.insert_or_assign(idOnServer, PlayerInfo{nullptr, "me", {}, 0});
                 printf("Got id from server: %u\n", idOnServer);
+                sendPingTo(serverPeer);
+                msSincePing = 0;
               }
               else
               {
@@ -178,6 +191,11 @@ int main(int argc, const char **argv)
   
                 printf("Deleting player \"%s\" (ID %u)\n", playerList[playerID].nickname.c_str(), playerID);
                 playerList.erase(playerID);
+              }
+              if (msgData[0] == 'p')
+              {
+                playerList[idOnServer].ping = msSincePing / 2;
+                msSincePing = 0;
               }
             }
             break;
@@ -221,15 +239,16 @@ int main(int argc, const char **argv)
       position.y += velocity.y * dt;
       velocity.x *= 0.99f;
       velocity.y *= 0.99f;
+
+      if (msSincePing == 0)
+        sendPingTo(serverPeer);
+      msSincePing += uint8_t(dt * 1000);
     }
 
+    playerList[idOnServer].pos = position;
     if(connected && idOnServer != -1)
     {
-      sendIdPositionTo(idOnServer, &position, serverPeer);
-    }
-    else
-    {
-      playerList[idOnServer].pos = position;
+      sendIdPlInfoTo(idOnServer, &playerList[idOnServer], serverPeer);
     }
 
     if (!connected && IsKeyPressed(KEY_ENTER))
