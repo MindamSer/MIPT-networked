@@ -1,7 +1,9 @@
 #include <enet/enet.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <cstring>
+
+#include <string>
+#include <format>
+#include <iostream>
 
 #include <map>
 
@@ -11,42 +13,42 @@
 
 void sendIDTo(uint32_t id, ENetPeer *peer)
 {
-  char *msg;
-  sprintf(msg, "%u", id);
-  ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
+  std::string msg = std::format("{}", id);
+  ENetPacket *packet = enet_packet_create(msg.c_str(), msg.size() + 1, ENET_PACKET_FLAG_RELIABLE);
   enet_peer_send(peer, 0, packet);
 
-  printf("Assigned ID %u to %x:%u\n", id, peer->address.host, peer->address.port);
+  printf("Assigned ID %u to %x:%u\n", 
+    id, peer->address.host, peer->address.port);
 }
 
 void sendNewPlayerTo(uint32_t id, PlayerInfo *playerInfo, ENetPeer *peer)
 {
-  char *msg;
-  sprintf(msg, "c %u %s", id, playerInfo->nickname.c_str());
-  ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
+  std::string msg = std::format("c {} {}", id, playerInfo->nickname);
+  ENetPacket *packet = enet_packet_create(msg.c_str(), msg.size() + 1, ENET_PACKET_FLAG_RELIABLE);
   enet_peer_send(peer, 1, packet);
 
-  printf("Sent add player to %x:%u\n", peer->address.host, peer->address.port);
+  printf("Sent add player to %x:%u\n", 
+    peer->address.host, peer->address.port);
 }
 
 void sendDelPlayerTo(uint32_t id, ENetPeer *peer)
 {
-  char *msg;
-  sprintf(msg, "d %u", id);
-  ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
+  std::string msg = std::format("d {}", id);
+  ENetPacket *packet = enet_packet_create(msg.c_str(), msg.size() + 1, ENET_PACKET_FLAG_RELIABLE);
   enet_peer_send(peer, 1, packet);
 
-  printf("Sent delete player to %x:%u\n", peer->address.host, peer->address.port);
+  printf("Sent delete player to %x:%u\n", 
+    peer->address.host, peer->address.port);
 }
 
 void sendPlayerInfoTo(uint32_t id, PlayerInfo *playerInfo, ENetPeer *peer)
 {
-  char *msg;
-  sprintf(msg, "%u %f %f %hu", id, playerInfo->pos.x, playerInfo->pos.y, playerInfo->ping);
-  ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT);
+  std::string msg = std::format("{} {} {} {}", id, playerInfo->pos.x, playerInfo->pos.y, playerInfo->ping);
+  ENetPacket *packet = enet_packet_create(msg.c_str(), msg.size() + 1, ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT);
   enet_peer_send(peer, 2, packet);
 
-  printf("Sent player info to %x:%u\n", peer->address.host, peer->address.port);
+  printf("Sent player info to %x:%u\n", 
+    peer->address.host, peer->address.port);
 }
 
 uint32_t getPlayerId(uint32_t port)
@@ -56,11 +58,8 @@ uint32_t getPlayerId(uint32_t port)
 
 std::string getPlayerName(uint32_t id)
 {
-  char *newNickname;
-  sprintf(newNickname, "jab-jabych##%u", id);
-  return std::string(newNickname);
+  return std::format("jab-jabych#{}", id);
 }
-
 
 
 
@@ -68,11 +67,12 @@ int main(int argc, const char **argv)
 {
   if (enet_initialize() != 0)
   {
-    printf("Cannot init ENet\n");
+    std::cout << "Cannot init ENet" << std::endl;
     return 1;
   }
   atexit(enet_deinitialize);
-  printf("ENet initialized\n");
+  std::cout << "ENet initialized" << std::endl;
+
 
   ENetHost *serverHost;
   {
@@ -82,13 +82,14 @@ int main(int argc, const char **argv)
     
     if (!(serverHost = enet_host_create(&address, 32, 3, 0, 0)))
     {
-      printf("Cannot create server host\n");
+      std::cout << "Cannot create ENet server host" << std::endl;
       return 1;
     }
-    printf("ENet server host created\n");
+    std::cout << "ENet server host created" << std::endl;
   }
   
-  printf("Server is active!\n");
+
+  std::cout << "Server is active!" << std::endl;
 
 
 
@@ -105,38 +106,43 @@ int main(int argc, const char **argv)
       {
       case ENET_EVENT_TYPE_CONNECT:
         {
-          printf("%x:%u - connecion established\n", event.peer->address.host, event.peer->address.port);
+          printf("%x:%u - connecion established\n", 
+            event.peer->address.host, event.peer->address.port);
           
           uint32_t newID = getPlayerId(event.peer->address.port);
           PlayerInfo newPI = {event.peer, getPlayerName(newID).c_str(), {}, 0};
-          
+          sendIDTo(newID, event.peer);
+
           for(auto IDplayerInfo : playerList)
           {
             sendNewPlayerTo(newID, &newPI, IDplayerInfo.second.peer);
-            sendNewPlayerTo(IDplayerInfo.first, &IDplayerInfo.second, event.peer);
+            sendNewPlayerTo(IDplayerInfo.first, &IDplayerInfo.second, newPI.peer);
           }
-          
           playerList.insert_or_assign(newID, newPI);
-          sendIDTo(newID, event.peer);
         }
         break;
 
       case ENET_EVENT_TYPE_DISCONNECT:
         {
-          printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
+          printf("%x:%u - disconnected\n", 
+            event.peer->address.host, event.peer->address.port);
 
           uint32_t delID = getPlayerId(event.peer->address.port);
+
           playerList.erase(delID);
           for(auto IDplayerInfo : playerList)
           {
-            sendDelPlayerTo(delID, event.peer);
+            sendDelPlayerTo(delID, IDplayerInfo.second.peer);
           }
+
+          event.peer->data = nullptr;
         }
         break;
 
       case ENET_EVENT_TYPE_RECEIVE:
         {
-          printf("%x:%u - packet received: '%s'\n", event.peer->address.host, event.peer->address.port, event.packet->data);
+          printf("%x:%u - packet received: '%s'\n", 
+            event.peer->address.host, event.peer->address.port, event.packet->data);
 
           char *msgData;
           sprintf(msgData, "%s", event.packet->data);
@@ -152,12 +158,17 @@ int main(int argc, const char **argv)
               uint32_t playerID;
               float x, y;
               sscanf(msgData, "%u %f %f", &playerID, &x, &y);
-              PlayerInfo playerInfo = {nullptr, "", {x,y}, 0};
+
+              auto &playerToUpdate = playerList[playerID];
+              playerToUpdate.pos.x = x;
+              playerToUpdate.pos.y = y;
               for(auto IDplayerInfo : playerList)
               {
-                sendPlayerInfoTo(playerID, &playerInfo, event.peer);
+                sendPlayerInfoTo(playerID, &playerToUpdate, IDplayerInfo.second.peer);
               }
             }
+            break;
+          default:
             break;
           }
 

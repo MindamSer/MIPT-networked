@@ -1,7 +1,7 @@
-#include <cstdio>
+#include <enet/enet.h>
 #include <cstdlib>
 #include <cstring>
-#include <enet/enet.h>
+#include <cstdio>
 
 #include <unordered_set>
 
@@ -15,8 +15,10 @@ void sendAdressTo(ENetAddress *address, ENetPeer *peer)
   ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
   enet_peer_send(peer, 0, packet);
 
-  printf("Sent server address to %x:%u\n", peer->address.host, peer->address.port);
+  printf("Sent server address to %x:%u\n", 
+    peer->address.host, peer->address.port);
 }
+
 
 
 int main(int argc, const char **argv)
@@ -44,17 +46,19 @@ int main(int argc, const char **argv)
     printf("ENet lobby host created\n");
   }
 
-
-  ENetAddress serverAddress;
-  enet_address_set_host(&serverAddress, SERVER_ADDRESS);
-  serverAddress.port = SERVER_PORT;
   
   printf("Lobby is active!\n");
 
 
 
+  ENetAddress serverAddress;
+  enet_address_set_host(&serverAddress, SERVER_ADDRESS);
+  serverAddress.port = SERVER_PORT;
+
   std::unordered_set<ENetPeer*> playerPool;
   bool gameStarted = false;
+
+
 
   ENetEvent event;
   while (true)
@@ -65,27 +69,33 @@ int main(int argc, const char **argv)
       {
       case ENET_EVENT_TYPE_CONNECT:
         {
-          printf("%x:%u - connecion established\n", event.peer->address.host, event.peer->address.port);
+          printf("%x:%u - connecion established\n", 
+            event.peer->address.host, event.peer->address.port);
         
+          playerPool.insert(event.peer);
+
           if(gameStarted)
           {
             sendAdressTo(&serverAddress, event.peer);
           }
-          playerPool.insert(event.peer);
         }
         break;
 
       case ENET_EVENT_TYPE_DISCONNECT:
         {
-          printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
+          printf("%x:%u - disconnected\n", 
+            event.peer->address.host, event.peer->address.port);
 
           playerPool.erase(event.peer);
+
+          event.peer->data = nullptr;
         }
         break;
 
       case ENET_EVENT_TYPE_RECEIVE:
         {
-          printf("%x:%u - packet received: '%s'\n", event.peer->address.host, event.peer->address.port, event.packet->data);
+          printf("%x:%u - packet received: '%s'\n", 
+            event.peer->address.host, event.peer->address.port, event.packet->data);
 
           char *msgData;
           sprintf(msgData, "%s", event.packet->data);

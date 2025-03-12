@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <iostream>
 #include <enet/enet.h>
 #include <raylib.h>
@@ -12,21 +13,22 @@
 
 void sendStartCommandTo(ENetPeer *peer)
 {
-  const char *msg = COMMAND_START;
-  ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
+  std::string msg = COMMAND_START;
+  ENetPacket *packet = enet_packet_create(msg.c_str(), msg.size() + 1, ENET_PACKET_FLAG_RELIABLE);
   enet_peer_send(peer, 0, packet);
 
-  printf("Sent start command to %x:%u\n", peer->address.host, peer->address.port);
+  printf("Sent start command to %x:%u\n", 
+    peer->address.host, peer->address.port);
 }
 
 void sendIdPositionTo(uint32_t id, Vector2 *pos, ENetPeer *peer)
 {
-  char *msg;
-  sprintf(msg, "%u %f %f", id, pos->x, pos->y);
-  ENetPacket *packet = enet_packet_create(msg, strlen(msg) + 1, ENET_PACKET_FLAG_RELIABLE);
+  std::string msg = std::format("{} {} {}", id, pos->x, pos->y);
+  ENetPacket *packet = enet_packet_create(msg.c_str(), msg.size() + 1, ENET_PACKET_FLAG_RELIABLE);
   enet_peer_send(peer, 2, packet);
 
-  printf("Sent position to %x:%u\n", peer->address.host, peer->address.port);
+  printf("Sent position to %x:%u\n", 
+    peer->address.host, peer->address.port);
 }
 
 
@@ -119,11 +121,12 @@ int main(int argc, const char **argv)
 
       case ENET_EVENT_TYPE_DISCONNECT:
         printf("%x:%u - disconnected\n", event.peer->address.host, event.peer->address.port);
+        event.peer->data = nullptr;
         break;
 
       case ENET_EVENT_TYPE_RECEIVE:
         {
-          printf("%x:%u - packet received: '%s'\nchannel %d\n", event.peer->address.host, event.peer->address.port, event.packet->data,event.channelID);
+          printf("%x:%u - packet received: '%s'\n", event.peer->address.host, event.peer->address.port, event.packet->data);
 
           char *msgData;
           sprintf(msgData, "%s", event.packet->data);
@@ -162,7 +165,7 @@ int main(int argc, const char **argv)
               if (msgData[0] == 'c')
               {
                 uint32_t playerID;
-                char *nickname;
+                char nickname[32];
                 sscanf(msgData+2, "%u %s", &playerID, nickname);
   
                 printf("Adding player \"%s\" (ID %u)\n", nickname, playerID);
@@ -238,9 +241,9 @@ int main(int argc, const char **argv)
     BeginDrawing();
     {
       ClearBackground(BLACK);
-      DrawText(TextFormat("Current status: %s", idOnServer == -1 ? "lobby" : "server"), 20, 10, 10, WHITE);
-      DrawText(TextFormat("My position: (%d, %d)", (int)position.x, (int)position.y), 20, 20, 10, WHITE);
-      DrawText("List of players:", 20, 30, 10, WHITE);
+      DrawText(TextFormat("Current status: %s", idOnServer == -1 ? "lobby" : "server"), 20, 20, 20, WHITE);
+      DrawText(TextFormat("My position: (%d, %d)", (int)position.x, (int)position.y), 20, 40, 20, WHITE);
+      DrawText("List of players:", 20, 60, 20, WHITE);
       int i = 0;
       Color color;
       char* playerLine;
@@ -248,7 +251,7 @@ int main(int argc, const char **argv)
       {
         sprintf(playerLine, "%s %hu", IDPI.second.nickname.c_str(), IDPI.second.ping);
         color = IDPI.first == idOnServer ? RED : WHITE;
-        DrawText(playerLine, 20, 40 + 10 * i, 10, color);
+        DrawText(playerLine, 40, 80 + 20 * i, 20, color);
         DrawCircleV(Vector2{IDPI.second.pos.x, IDPI.second.pos.y}, 10.f, color);
         ++i;
       }
@@ -256,6 +259,8 @@ int main(int argc, const char **argv)
     EndDrawing();
   }
 
+
+  enet_host_destroy(clientHost);
 
   return 0;
 }
