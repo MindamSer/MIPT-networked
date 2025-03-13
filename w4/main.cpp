@@ -3,6 +3,8 @@
 #include "raylib.h"
 #include <enet/enet.h>
 
+#include <stdio.h>
+
 #include <vector>
 #include "entity.h"
 #include "protocol.h"
@@ -122,6 +124,8 @@ int main(int argc, const char **argv)
           break;
         case E_SERVER_TO_CLIENT_SNAPSHOT:
           on_snapshot(event.packet);
+          break;
+        default:
           break;
         };
         break;

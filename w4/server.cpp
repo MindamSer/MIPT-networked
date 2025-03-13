@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <vector>
 #include <map>
+#include <math.h>
 
 static std::vector<Entity> entities;
 static std::map<uint16_t, ENetPeer*> controlledMap;
@@ -107,6 +108,8 @@ int main(int argc, const char **argv)
             break;
           case E_CLIENT_TO_SERVER_STATE:
             on_state(event.packet);
+            break;
+          default:
             break;
         };
         enet_packet_destroy(event.packet);
