@@ -1,8 +1,11 @@
 #include "client.h"
-#include "protocol.h"
 
+#include <cstdint>
 #include <iostream>
 #include <unistd.h>
+
+#include "entity.h"
+#include "protocol.h"
 
 
 int Client::run()
@@ -15,12 +18,13 @@ int Client::run()
     return 1;
   }
 
+  float dt = 0.f;
   while(!WindowShouldClose()) 
   {
     dt = GetFrameTime();
 
     processMessages();
-    updateEntities();
+    updateMyEntity(dt);
     drawFrame();
   }
   CloseWindow();
@@ -29,6 +33,7 @@ int Client::run()
 
   return 0;
 }
+
 
 void Client::initWindow()
 {
@@ -87,7 +92,6 @@ void Client::disconnectENet()
 }
 
 
-
 void Client::processMessages()
 {
   while (enet_host_service(clientHost, &event, 0) > 0)
@@ -100,48 +104,54 @@ void Client::processMessages()
       send_join(serverPeer);
       connected = true;
       break;
+    
     case ENET_EVENT_TYPE_RECEIVE:
       switch (get_packet_type(event.packet))
       {
       case E_SERVER_TO_CLIENT_NEW_ENTITY:
-        on_new_entity_packet();
-        printf("new it\n");
+        onNewEntity();
+        std::cout << "New entity added" << std::endl;
         break;
+
       case E_SERVER_TO_CLIENT_SET_CONTROLLED_ENTITY:
-        on_set_controlled_entity();
-        printf("got it\n");
+        onSetControlledEntity();
+        std::cout << "Controlled entity set" << std::endl;
         break;
+        
       case E_SERVER_TO_CLIENT_SNAPSHOT:
-        on_snapshot();
+        onSnapshot();
         break;
+
       default:
         break;
       };
+      enet_packet_destroy(event.packet);
       break;
+
     default:
       break;
     };
   }
 }
 
-void Client::updateEntities()
+void Client::updateMyEntity(float dt)
 {
-  if (my_entity != invalid_entity)
+  if (my_entity != EntityId::Invalid)
   {
+    Entity &ent = entities[my_entity];
+
     bool left = IsKeyDown(KEY_LEFT);
     bool right = IsKeyDown(KEY_RIGHT);
     bool up = IsKeyDown(KEY_UP);
     bool down = IsKeyDown(KEY_DOWN);
-    get_entity(my_entity, [&](Entity& e)
-    {
-      // Update
-      e.x += ((left ? -dt : 0.f) + (right ? +dt : 0.f)) * 100.f;
-      e.y += ((up ? -dt : 0.f) + (down ? +dt : 0.f)) * 100.f;
-      // Send
-      send_entity_state(serverPeer, my_entity, e.x, e.y);
-      camera.target.x = e.x;
-      camera.target.y = e.y;
-    });
+
+    ent.x += ((left ? -dt : 0.f) + (right ? +dt : 0.f)) * 100.f;
+    ent.y += ((up ? -dt : 0.f) + (down ? +dt : 0.f)) * 100.f;
+
+    camera.target.x = ent.x;
+    camera.target.y = ent.y;
+    
+    send_entity_state(serverPeer, static_cast<uint16_t>(my_entity), ent.x, ent.y);
   }
 }
 
@@ -152,10 +162,11 @@ void Client::drawFrame()
     ClearBackground(Color{40, 40, 40, 255});
     BeginMode2D(camera);
     {
-      for (const Entity &e : entities)
+      for (const auto &p : entities)
       {
-        const Rectangle rect = {e.x, e.y, 10.f, 10.f};
-        DrawRectangleRec(rect, GetColor(e.color));
+        const Entity &ent = p.second;
+        const Rectangle rect = {ent.x, ent.y, 10.f, 10.f};
+        DrawRectangleRec(rect, GetColor(ent.color));
       }
     }
     EndMode2D();
@@ -163,44 +174,40 @@ void Client::drawFrame()
   EndDrawing();
 }
 
-void Client::on_new_entity_packet()
+
+void Client::onSetControlledEntity()
+{
+  ENetPacket* &packet = event.packet;
+
+  uint16_t eid;
+  deserialize_set_controlled_entity(packet, eid);
+
+  my_entity = EntityId(eid);
+}
+
+void Client::onNewEntity()
 {
   ENetPacket* &packet = event.packet;
 
   Entity newEntity;
   deserialize_new_entity(packet, newEntity);
-  auto itf = indexMap.find(newEntity.eid);
-  if (itf != indexMap.end())
-    return; // don't need to do anything, we already have entity
-  indexMap[newEntity.eid] = entities.size();
-  entities.push_back(newEntity);
-}
 
-void Client::on_set_controlled_entity()
-{
-  ENetPacket* &packet = event.packet;
-
-  deserialize_set_controlled_entity(packet, my_entity);
-}
-
-template<typename Callable>
-void Client::get_entity(uint16_t eid, Callable c)
-{
-  auto itf = indexMap.find(eid);
-  if (itf != indexMap.end())
-    c(entities[itf->second]);
-}
-
-void Client::on_snapshot()
-{
-  ENetPacket* &packet = event.packet;
-
-  uint16_t eid = invalid_entity;
-  float x = 0.f; float y = 0.f;
-  deserialize_snapshot(packet, eid, x, y);
-  get_entity(eid, [&](Entity& e)
+  auto itf = entities.find(newEntity.eid);
+  if (itf == entities.end())
   {
-    e.x = x;
-    e.y = y;
-  });
+    entities.emplace(newEntity.eid, newEntity);
+  }
+}
+
+void Client::onSnapshot()
+{
+  ENetPacket* &packet = event.packet;
+
+  uint16_t eid;
+  float x, y;
+  deserialize_snapshot(packet, eid, x, y);
+  
+  Entity &ent = entities[EntityId(eid)];
+  ent.x = x;
+  ent.y = y;
 }

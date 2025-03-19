@@ -3,8 +3,7 @@
 #include <cstdint>
 #include <enet/enet.h>
 
-#include <vector>
-#include <map>
+#include <unordered_map>
 
 #include "entity.h"
 
@@ -21,16 +20,17 @@ public:
   void updateEntities(float dt);
   void sendSnapshots();
 
-  uint16_t create_random_entity();
-  void on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host);
-  void on_state(ENetPacket *packet);
+  Entity createRandomEntity();
+
+  void onJoin();
+  void onState();
 
 private:
   ENetHost *serverHost;
   ENetEvent event;
 
-  std::vector<Entity> entities;
-  std::map<uint16_t, ENetPeer*> controlledMap;  
+  std::unordered_map<EntityId, Entity> entities;
+  std::unordered_map<EntityId, ENetPeer*> players;
 
   uint32_t lastTime = 0;
   int numAi = 10;

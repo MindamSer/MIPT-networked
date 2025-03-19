@@ -3,7 +3,6 @@
 #include <enet/enet.h>
 #include "raylib.h"
 
-#include <vector>
 #include <unordered_map>
 
 #include "entity.h"
@@ -19,15 +18,12 @@ public:
   void disconnectENet();
   
   void processMessages();
-  void updateEntities();
+  void updateMyEntity(float dt);
   void drawFrame();
 
-  void on_new_entity_packet();
-  void on_set_controlled_entity();
-  
-  template<typename Callable>
-  void get_entity(uint16_t eid, Callable c);
-  void on_snapshot();
+  void onSetControlledEntity();
+  void onNewEntity();
+  void onSnapshot();
 
 private:
   int windowWidth = 800;
@@ -39,9 +35,6 @@ private:
   bool connected = false;
   ENetEvent event;
 
-  std::vector<Entity> entities; 
-  std::unordered_map<uint16_t, size_t> indexMap; 
-  uint16_t my_entity = invalid_entity;
-
-  float dt = 0.f;
+  std::unordered_map<EntityId, Entity> entities;
+  EntityId my_entity = EntityId::Invalid;
 };

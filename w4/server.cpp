@@ -1,4 +1,5 @@
 #include "server.h"
+#include "entity.h"
 #include "protocol.h"
 
 #include <iostream>
@@ -14,17 +15,19 @@ int Server::run()
 
   for (int i = 0; i < numAi; ++i)
   {
-    uint16_t eid = create_random_entity();
-    entities[eid].serverControlled = true;
-    controlledMap[eid] = nullptr;
+    Entity ent = createRandomEntity();
+    ent.serverControlled = true;
+
+    entities[ent.eid] = ent;
   }
 
   lastTime = enet_time_get();
 
+  uint32_t curTime = 0;
   float dt = 0.f;
   while(true)
   {
-    uint32_t curTime = enet_time_get();
+    curTime = enet_time_get();
     dt = (curTime - lastTime) * 0.001f;
     lastTime = curTime;
 
@@ -72,22 +75,28 @@ void Server::processMessages()
     switch (event.type)
     {
     case ENET_EVENT_TYPE_CONNECT:
-      printf("Connection with %x:%u established\n", event.peer->address.host, event.peer->address.port);
+      printf("Connection with %x:%u established\n",
+        event.peer->address.host, event.peer->address.port);
       break;
+
     case ENET_EVENT_TYPE_RECEIVE:
       switch (get_packet_type(event.packet))
       {
         case E_CLIENT_TO_SERVER_JOIN:
-          on_join(event.packet, event.peer, serverHost);
+          std::cout << "New player added" << std::endl;
+          onJoin();
           break;
+
         case E_CLIENT_TO_SERVER_STATE:
-          on_state(event.packet);
+          onState();
           break;
+
         default:
           break;
       };
       enet_packet_destroy(event.packet);
       break;
+
     default:
       break;
     };
@@ -96,21 +105,33 @@ void Server::processMessages()
 
 void Server::updateEntities(float dt)
 {
-  for (Entity &e : entities)
+  for (auto &entEntry : entities)
   {
-    if (e.serverControlled)
+    if (entEntry.second.serverControlled)
     {
-      const float diffX = e.targetX - e.x;
-      const float diffY = e.targetY - e.y;
-      const float dirX = diffX > 0.f ? 1.f : -1.f;
-      const float dirY = diffY > 0.f ? 1.f : -1.f;
-      constexpr float spd = 50.f;
-      e.x += dirX * spd * dt;
-      e.y += dirY * spd * dt;
+      Entity &ent = entEntry.second;
+
+      float diffX = ent.targetX - ent.x;
+      float diffY = ent.targetY - ent.y;
       if (fabsf(diffX) < 10.f && fabsf(diffY) < 10.f)
       {
-        e.targetX = (rand() % 40 - 20) * 15.f;
-        e.targetY = (rand() % 40 - 20) * 15.f;
+        ent.targetX = (rand() % 40 - 20) * 15.f;
+        ent.targetY = (rand() % 40 - 20) * 15.f;
+
+        diffX = ent.targetX - ent.x;
+        diffY = ent.targetY - ent.y;
+      }
+
+      float dirX = diffX > 0.f ? 1.f : -1.f;
+      float dirY = diffY > 0.f ? 1.f : -1.f;
+      
+      constexpr float spd = 50.f;
+      ent.x += dirX * spd * dt;
+      ent.y += dirY * spd * dt;
+      if (fabsf(diffX) < 10.f && fabsf(diffY) < 10.f)
+      {
+        ent.targetX = (rand() % 40 - 20) * 15.f;
+        ent.targetY = (rand() % 40 - 20) * 15.f;
       }
     }
   }
@@ -118,54 +139,70 @@ void Server::updateEntities(float dt)
 
 void Server::sendSnapshots()
 {
-  for (const Entity &e : entities)
+  for (const auto &entEntry : entities)
   {
-    for (size_t i = 0; i < serverHost->peerCount; ++i)
+    for (const auto &peerEntry : players)
     {
-      ENetPeer *peer = &serverHost->peers[i];
-      if (controlledMap[e.eid] != peer)
-        send_snapshot(peer, e.eid, e.x, e.y);
+      if (entEntry.first != peerEntry.first)
+      {
+        const Entity & ent = entEntry.second;
+        send_snapshot(peerEntry.second, static_cast<uint16_t>(ent.eid), ent.x, ent.y);
+      }
     }
   }
 }
 
-uint16_t Server::create_random_entity()
+Entity Server::createRandomEntity()
 {
-  uint16_t newEid = entities.size();
-  Entity ent(newEid);
-  entities.push_back(ent);
-  return newEid;
+  Entity ent;
+  ent.eid = EntityId(entities.size());
+
+  ent.color = 
+  0x11000000 * (rand() % 12 + 1) +
+  0x00110000 * (rand() % 12 + 1) +
+  0x00001100 * (rand() % 12 + 1) +
+  0x333333ff;
+  ent.x = (rand() % 40 - 20) * 15.f;
+  ent.y = (rand() % 40 - 20) * 15.f;
+
+  ent.targetX = ent.x;
+  ent.targetY = ent.y;
+
+  return ent;
 }
 
-void Server::on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host)
+void Server::onJoin()
 {
-    // send all entities
-    for (const Entity &ent : entities)
-    send_new_entity(peer, ent);
+  for (const auto &entEntry : entities)
+  {
+    send_new_entity(event.peer, entEntry.second);
+  }
 
-  // find max eid
-  uint16_t newEid = create_random_entity();
-  const Entity& ent = entities[newEid];
+  Entity ent = createRandomEntity();
+  entities[ent.eid] = ent;
+  players[ent.eid] = event.peer;
 
-  controlledMap[newEid] = peer;
-
-
-  // send info about new entity to everyone
-  for (size_t i = 0; i < host->peerCount; ++i)
-    send_new_entity(&host->peers[i], ent);
-  // send info about controlled entity
-  send_set_controlled_entity(peer, newEid);
+  for (const auto &peerEntry : players)
+  {
+    send_new_entity(peerEntry.second, ent);
+  }
+  send_set_controlled_entity(event.peer, static_cast<uint16_t>(ent.eid));
 }
 
-void Server::on_state(ENetPacket *packet)
+void Server::onState()
 {
-  uint16_t eid = invalid_entity;
-  float x = 0.f; float y = 0.f;
+  ENetPacket* &packet = event.packet;
+
+  uint16_t eid;
+  float x, y;
   deserialize_entity_state(packet, eid, x, y);
-  for (Entity &e : entities)
-    if (e.eid == eid)
+
+  for (auto &entEntry : entities)
+  {
+    if(entEntry.first == EntityId(eid))
     {
-      e.x = x;
-      e.y = y;
+      entEntry.second.x = x;
+      entEntry.second.y = y;
     }
+  }
 }

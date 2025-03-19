@@ -1,13 +1,19 @@
 #pragma once
 #include <cstdint>
 
-constexpr uint16_t invalid_entity = -1;
+enum class EntityId : uint16_t
+{
+  Invalid = static_cast<uint16_t>(-1)
+};
+
 struct Entity
 {
-  uint32_t color = 0xff00ffff;
+  EntityId eid = EntityId::Invalid;
+
+  uint32_t color = 0xffffffff;
   float x = 0.f;
   float y = 0.f;
-  uint16_t eid = invalid_entity;
+
   bool serverControlled = false;
   float targetX = 0.f;
   float targetY = 0.f;
