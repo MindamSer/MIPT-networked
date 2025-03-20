@@ -9,6 +9,7 @@ void send_join(ENetPeer *peer)
   enet_peer_send(peer, 0, packet);
 }
 
+
 void send_new_entity(ENetPeer *peer, const Entity &ent)
 {
   ENetPacket *packet = enet_packet_create(nullptr, sizeof(uint8_t) + sizeof(Entity),

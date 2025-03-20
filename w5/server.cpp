@@ -1,8 +1,7 @@
 #include <enet/enet.h>
-#include <iostream>
+#include <stdio.h>
 #include "entity.h"
 #include "protocol.h"
-#include "mathUtils.h"
 #include <stdlib.h>
 #include <vector>
 #include <map>
@@ -27,7 +26,7 @@ void on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host)
                    0x00000044 * (rand() % 5);
   float x = (rand() % 4) * 5.f;
   float y = (rand() % 4) * 5.f;
-  Entity ent = {color, x, y, 0.f, (rand() / RAND_MAX) * 3.141592654f, 0.f, 0.f, 0.f, 0.f, newEid};
+  Entity ent = {color, x, y, 0.f, (rand()*1.f / RAND_MAX) * 3.141592654f, 0.f, 0.f, 0.f, 0.f, newEid};
   entities.push_back(ent);
 
   controlledMap[newEid] = peer;
@@ -71,6 +70,8 @@ static void update_net(ENetHost* server)
           break;
         case E_CLIENT_TO_SERVER_INPUT:
           on_input(event.packet);
+          break;
+        default:
           break;
       };
       enet_packet_destroy(event.packet);
