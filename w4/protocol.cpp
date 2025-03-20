@@ -69,10 +69,25 @@ void send_snapshot(ENetPeer *peer, uint16_t eid, float x, float y)
   enet_peer_send(peer, 1, packet);
 }
 
+void send_entity_score(ENetPeer *peer, uint16_t eid, float size, uint32_t score)
+{
+  uint64_t packetSize = sizeof(uint8_t) + sizeof(uint16_t) + sizeof(float) + sizeof(uint32_t);
+
+  BitStream bs{packetSize};
+  ENetPacket *packet = enet_packet_create(nullptr, packetSize, ENET_PACKET_FLAG_RELIABLE);
+  
+  bs << E_SERVER_TO_CLIENT_SCORE << eid << size << score;
+  bs.flush(packet->data);
+
+  enet_peer_send(peer, 1, packet);
+}
+
+
 MessageType get_packet_type(ENetPacket *packet)
 {
   return (MessageType)*packet->data;
 }
+
 
 void deserialize_new_entity(ENetPacket *packet, Entity &ent)
 {
@@ -114,3 +129,12 @@ void deserialize_snapshot(ENetPacket *packet, uint16_t &eid, float &x, float &y)
   bs >> eid >> x >> y;
 }
 
+void deserialize_entity_score(ENetPacket *packet, uint16_t &eid, float &size, uint32_t &score)
+{
+  uint64_t packetSize = sizeof(uint8_t) + sizeof(uint16_t) + sizeof(float) + sizeof(uint32_t);
+
+  BitStream bs{packet->data, packetSize};
+
+  bs.skip(sizeof(uint8_t));
+  bs >> eid >>size >> score;
+}

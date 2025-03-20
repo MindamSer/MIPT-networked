@@ -18,6 +18,7 @@ public:
   
   void processMessages();
   void updateEntities(float dt);
+  void checkCollisions();
   void sendSnapshots();
 
   Entity createRandomEntity();

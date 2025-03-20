@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <iostream>
 #include <unistd.h>
+#include <format>
 
 #include "entity.h"
 #include "protocol.h"
@@ -94,7 +95,7 @@ void Client::disconnectENet()
 
 void Client::processMessages()
 {
-  while (enet_host_service(clientHost, &event, 0) > 0)
+  while (enet_host_service(clientHost, &event, 1) > 0)
   {
     switch (event.type)
     {
@@ -120,6 +121,10 @@ void Client::processMessages()
         
       case E_SERVER_TO_CLIENT_SNAPSHOT:
         onSnapshot();
+        break;
+
+      case E_SERVER_TO_CLIENT_SCORE:
+        onScore();
         break;
 
       default:
@@ -160,16 +165,25 @@ void Client::drawFrame()
   BeginDrawing();
   {
     ClearBackground(Color{40, 40, 40, 255});
+
     BeginMode2D(camera);
     {
-      for (const auto &p : entities)
+      for (const auto &entEntry : entities)
       {
-        const Entity &ent = p.second;
-        const Rectangle rect = {ent.x, ent.y, 10.f, 10.f};
+        const Entity &ent = entEntry.second;
+        const Rectangle rect = {ent.x, ent.y, ent.size, ent.size};
         DrawRectangleRec(rect, GetColor(ent.color));
       }
     }
     EndMode2D();
+
+    int i = 0;
+    for(auto entEntry : entities)
+    {
+      DrawText(std::format("ID: {} Score: {}", static_cast<uint16_t>(entEntry.second.eid), entEntry.second.score).c_str(),
+      20, 20 + 20 * i, 20, my_entity == entEntry.first ? RED : WHITE);
+      ++i;
+    }
   }
   EndDrawing();
 }
@@ -210,4 +224,18 @@ void Client::onSnapshot()
   Entity &ent = entities[EntityId(eid)];
   ent.x = x;
   ent.y = y;
+}
+
+void Client::onScore()
+{
+  ENetPacket* &packet = event.packet;
+
+  uint16_t eid;
+  float size;
+  uint32_t score;
+  deserialize_entity_score(packet, eid, size, score);
+  
+  Entity &ent = entities[EntityId(eid)];
+  ent.size = size;
+  ent.score = score;
 }

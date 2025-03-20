@@ -33,6 +33,7 @@ int Server::run()
 
     processMessages();
     updateEntities(dt);
+    checkCollisions();
     sendSnapshots();
   }
 
@@ -70,7 +71,7 @@ void Server::disconnectENet()
 
 void Server::processMessages()
 {
-  while (enet_host_service(serverHost, &event, 0) > 0)
+  while (enet_host_service(serverHost, &event, 1) > 0)
   {
     switch (event.type)
     {
@@ -128,10 +129,41 @@ void Server::updateEntities(float dt)
       constexpr float spd = 50.f;
       ent.x += dirX * spd * dt;
       ent.y += dirY * spd * dt;
-      if (fabsf(diffX) < 10.f && fabsf(diffY) < 10.f)
+    }
+  }
+}
+
+void Server::checkCollisions()
+{
+  for (auto &entEntry1 : entities)
+  {
+    for (auto &entEntry2 : entities)
+    {
+      if(entEntry1.first != entEntry2.first)
       {
-        ent.targetX = (rand() % 40 - 20) * 15.f;
-        ent.targetY = (rand() % 40 - 20) * 15.f;
+        Entity &ent1 = entEntry1.second;
+        Entity &ent2 = entEntry2.second;
+
+        float diffX = fabs((ent1.x + ent1.size / 2) - (ent2.x + ent2.size / 2)) - ent1.size / 2 - ent2.size / 2;
+        float diffY = fabs((ent1.y + ent1.size / 2) - (ent2.y + ent2.size / 2)) - ent1.size / 2 - ent2.size / 2;
+
+        if (diffX < 0.f && diffY < 0.f && ent1.size > ent2.size)
+        {
+          ent1.size += ent2.size / 2.f;
+          ent1.score += ent2.size / 2;
+
+          ent2.x = (rand() % 40 - 20) * 15.f;
+          ent2.y = (rand() % 40 - 20) * 15.f;
+          ent2.size = 5.f + rand() % 10 * 1.f;
+
+          for (const auto &peerEntry : players)
+          {
+            send_entity_score(peerEntry.second, static_cast<uint16_t>(ent1.eid), ent1.size, ent1.score);
+            send_entity_score(peerEntry.second, static_cast<uint16_t>(ent2.eid), ent2.size, ent2.score);
+            send_snapshot(peerEntry.second, static_cast<uint16_t>(ent1.eid), ent1.x, ent1.y);
+            send_snapshot(peerEntry.second, static_cast<uint16_t>(ent2.eid), ent2.x, ent2.y);
+          }
+        }
       }
     }
   }
@@ -164,6 +196,8 @@ Entity Server::createRandomEntity()
   0x333333ff;
   ent.x = (rand() % 40 - 20) * 15.f;
   ent.y = (rand() % 40 - 20) * 15.f;
+
+  ent.size = 5.f + rand() % 10 * 1.f;
 
   ent.targetX = ent.x;
   ent.targetY = ent.y;

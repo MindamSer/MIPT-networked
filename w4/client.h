@@ -24,6 +24,7 @@ public:
   void onSetControlledEntity();
   void onNewEntity();
   void onSnapshot();
+  void onScore();
 
 private:
   int windowWidth = 800;
