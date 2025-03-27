@@ -48,7 +48,7 @@ void on_snapshot(ENetPacket *packet)
   {
       e.x = x;
       e.y = y;
-      e.ori = ori;
+      e.alpha = ori;
   });
 }
 
@@ -63,7 +63,7 @@ static void draw_entity(const Entity& e)
 {
   const float shipLen = 3.f;
   const float shipWidth = 2.f;
-  const Vector2 fwd = Vector2{cosf(e.ori), sinf(e.ori)};
+  const Vector2 fwd = Vector2{cosf(e.alpha), sinf(e.alpha)};
   const Vector2 left = Vector2{-fwd.y, fwd.x};
   DrawTriangle(Vector2{e.x + fwd.x * shipLen * 0.5f, e.y + fwd.y * shipLen * 0.5f},
                Vector2{e.x - fwd.x * shipLen * 0.5f - left.x * shipWidth * 0.5f, e.y - fwd.y * shipLen * 0.5f - left.y * shipWidth * 0.5f},
@@ -74,7 +74,7 @@ static void draw_entity(const Entity& e)
 static void update_net(ENetHost* client, ENetPeer* serverPeer)
 {
   ENetEvent event;
-  while (enet_host_service(client, &event, 0) > 0)
+  while (enet_host_service(client, &event, 10) > 0)
   {
     switch (event.type)
     {
@@ -149,8 +149,8 @@ int main(int argc, const char **argv)
     return 1;
   }
 
-  ENetHost *client = enet_host_create(nullptr, 1, 2, 0, 0);
-  if (!client)
+  ENetHost *clientHost = enet_host_create(nullptr, 1, 2, 0, 0);
+  if (!clientHost)
   {
     printf("Cannot create ENet client\n");
     return 1;
@@ -160,7 +160,7 @@ int main(int argc, const char **argv)
   enet_address_set_host(&address, "localhost");
   address.port = 10131;
 
-  ENetPeer *serverPeer = enet_host_connect(client, &address, 2, 0);
+  ENetPeer *serverPeer = enet_host_connect(clientHost, &address, 2, 0);
   if (!serverPeer)
   {
     printf("Cannot connect to server");
@@ -193,7 +193,7 @@ int main(int argc, const char **argv)
   {
     float dt = GetFrameTime(); // for future use and making it look smooth
 
-    update_net(client, serverPeer);
+    update_net(clientHost, serverPeer);
     simulate_world(serverPeer);
     draw_world(camera);
   }

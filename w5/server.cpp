@@ -26,7 +26,7 @@ void on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host)
                    0x00000044 * (rand() % 5);
   float x = (rand() % 4) * 5.f;
   float y = (rand() % 4) * 5.f;
-  Entity ent = {color, x, y, 0.f, (rand()*1.f / RAND_MAX) * 3.141592654f, 0.f, 0.f, 0.f, 0.f, newEid};
+  Entity ent = {newEid, color, x, y, 0.f, (rand()*1.f / RAND_MAX) * 3.141592654f, 0.f, 0.f, 0.f, 0.f};
   entities.push_back(ent);
 
   controlledMap[newEid] = peer;
@@ -55,7 +55,7 @@ void on_input(ENetPacket *packet)
 static void update_net(ENetHost* server)
 {
   ENetEvent event;
-  while (enet_host_service(server, &event, 0) > 0)
+  while (enet_host_service(server, &event, 10) > 0)
   {
     switch (event.type)
     {
@@ -87,14 +87,14 @@ static void simulate_world(ENetHost* server, float dt)
   for (Entity &e : entities)
   {
     // simulate
-    simulate_entity(e, dt);
+    e.update(dt);
     // send
     for (size_t i = 0; i < server->peerCount; ++i)
     {
       ENetPeer *peer = &server->peers[i];
       // skip this here in this implementation
       //if (controlledMap[e.eid] != peer)
-      send_snapshot(peer, e.eid, e.x, e.y, e.ori);
+      send_snapshot(peer, e.eid, e.x, e.y, e.alpha);
     }
   }
 }
@@ -137,7 +137,7 @@ int main(int argc, const char **argv)
     simulate_world(server, dt);
     update_time(server, curTime);
 
-    usleep(100000);
+    //usleep(100000);
   }
 
   enet_host_destroy(server);
