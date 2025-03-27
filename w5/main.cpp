@@ -2,28 +2,27 @@
 //
 #include "raylib.h"
 #include <enet/enet.h>
-#include <math.h>
 #include <stdio.h>
-
-#include <vector>
+#include <math.h>
 #include <unordered_map>
+
 #include "entity.h"
 #include "protocol.h"
 
 
-static std::vector<Entity> entities;
-static std::unordered_map<uint16_t, size_t> indexMap;
+static std::unordered_map<uint16_t, Entity> entities;
 static uint16_t my_entity = invalid_entity;
 
 void on_new_entity_packet(ENetPacket *packet)
 {
   Entity newEntity;
   deserialize_new_entity(packet, newEntity);
-  auto itf = indexMap.find(newEntity.eid);
-  if (itf != indexMap.end())
-    return; // don't need to do anything, we already have entity
-  indexMap[newEntity.eid] = entities.size();
-  entities.push_back(newEntity);
+
+  auto itf = entities.find(newEntity.eid);
+  if (itf != entities.end())
+    return;
+
+  entities[newEntity.eid] = newEntity;
 }
 
 void on_set_controlled_entity(ENetPacket *packet)
@@ -34,9 +33,9 @@ void on_set_controlled_entity(ENetPacket *packet)
 template<typename Callable>
 static void get_entity(uint16_t eid, Callable c)
 {
-  auto itf = indexMap.find(eid);
-  if (itf != indexMap.end())
-    c(entities[itf->second]);
+  auto itf = entities.find(eid);
+  if (itf != entities.end())
+    c(itf->second);
 }
 
 void on_snapshot(ENetPacket *packet)
@@ -134,8 +133,10 @@ static void draw_world(const Camera2D& camera)
     ClearBackground(GRAY);
     BeginMode2D(camera);
 
-      for (const Entity &e : entities)
-        draw_entity(e);
+      for (const auto &entEntry : entities)
+      {
+        draw_entity(entEntry.second);
+      }
 
     EndMode2D();
   EndDrawing();
@@ -189,9 +190,10 @@ int main(int argc, const char **argv)
 
   SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
 
+  float dt = 0.f;
   while (!WindowShouldClose())
   {
-    float dt = GetFrameTime(); // for future use and making it look smooth
+    dt = GetFrameTime(); // for future use and making it look smooth
 
     update_net(clientHost, serverPeer);
     simulate_world(serverPeer);
