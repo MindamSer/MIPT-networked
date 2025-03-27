@@ -1,61 +1,69 @@
 #include <enet/enet.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <unordered_map>
+
 #include "entity.h"
 #include "protocol.h"
-#include <stdlib.h>
-#include <vector>
-#include <map>
 
-static std::vector<Entity> entities;
-static std::map<uint16_t, ENetPeer*> controlledMap;
 
-void on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host)
+static std::unordered_map<uint16_t, Entity> entities;
+static std::unordered_map<uint16_t, ENetPeer*> playerPeers;
+
+static void on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host)
 {
-  // send all entities
-  for (const Entity &ent : entities)
-    send_new_entity(peer, ent);
-
   // find max eid
-  uint16_t maxEid = entities.empty() ? invalid_entity : entities[0].eid;
-  for (const Entity &e : entities)
-    maxEid = std::max(maxEid, e.eid);
-  uint16_t newEid = maxEid + 1;
-  uint32_t color = 0xff000000 +
-                   0x00440000 * (rand() % 5) +
-                   0x00004400 * (rand() % 5) +
-                   0x00000044 * (rand() % 5);
-  float x = (rand() % 4) * 5.f;
-  float y = (rand() % 4) * 5.f;
-  Entity ent = {newEid, color, x, y, 0.f, (rand()*1.f / RAND_MAX) * 3.141592654f, 0.f, 0.f, 0.f, 0.f};
-  entities.push_back(ent);
+  uint16_t newEid = entities.empty() ? invalid_entity : entities.begin()->first;
+  for (const auto &entEntry : entities)
+  {
+    newEid = std::max(newEid, entEntry.first);
+  }
+  ++newEid;
 
-  controlledMap[newEid] = peer;
+  // make new entity
+  Entity ent = {};
+  ent.eid = newEid;
+  ent.color = 
+  0xff000000 +
+  0x00440000 * (rand() % 5) +
+  0x00004400 * (rand() % 5) +
+  0x00000044 * (rand() % 5);
+  ent.x = (rand() % 4) * 5.f;
+  ent.y = (rand() % 4) * 5.f;
 
+
+  // send old entities to new player
+  for (const auto &entEntry : entities)
+  {
+    send_new_entity(peer, entEntry.second);
+  }
+
+  entities[newEid] = ent;
+  playerPeers[newEid] = peer;
 
   // send info about new entity to everyone
-  for (size_t i = 0; i < host->peerCount; ++i)
-    send_new_entity(&host->peers[i], ent);
+  for (const auto &peerEntry : playerPeers)
+    send_new_entity(peerEntry.second, ent);
+
   // send info about controlled entity
   send_set_controlled_entity(peer, newEid);
 }
 
-void on_input(ENetPacket *packet)
+static void on_input(ENetPacket *packet)
 {
   uint16_t eid = invalid_entity;
   float thr = 0.f; float steer = 0.f;
   deserialize_entity_input(packet, eid, thr, steer);
-  for (Entity &e : entities)
-    if (e.eid == eid)
-    {
-      e.thr = thr;
-      e.steer = steer;
-    }
+
+  Entity &ent = entities[eid];
+  ent.thr = thr;
+  ent.steer = steer;
 }
 
-static void update_net(ENetHost* server)
+static void update_net(ENetHost* serverHost)
 {
   ENetEvent event;
-  while (enet_host_service(server, &event, 10) > 0)
+  while (enet_host_service(serverHost, &event, 10) > 0)
   {
     switch (event.type)
     {
@@ -66,7 +74,7 @@ static void update_net(ENetHost* server)
       switch (get_packet_type(event.packet))
       {
         case E_CLIENT_TO_SERVER_JOIN:
-          on_join(event.packet, event.peer, server);
+          on_join(event.packet, event.peer, serverHost);
           break;
         case E_CLIENT_TO_SERVER_INPUT:
           on_input(event.packet);
@@ -82,28 +90,29 @@ static void update_net(ENetHost* server)
   }
 }
 
-static void simulate_world(ENetHost* server, float dt)
+static void update_world(ENetHost* server, float dt)
 {
-  for (Entity &e : entities)
+  for (auto &entEntry : entities)
   {
+    Entity &ent = entEntry.second;
+
     // simulate
-    e.update(dt);
+    ent.update(dt);
+
     // send
-    for (size_t i = 0; i < server->peerCount; ++i)
+    for (const auto &peerEntry : playerPeers)
     {
-      ENetPeer *peer = &server->peers[i];
-      // skip this here in this implementation
-      //if (controlledMap[e.eid] != peer)
-      send_snapshot(peer, e.eid, e.x, e.y, e.alpha);
+      send_snapshot(peerEntry.second, ent.eid, ent.x, ent.y, ent.alpha);
     }
   }
 }
 
 static void update_time(ENetHost* server, uint32_t curTime)
 {
-  // We can send it less often too
-  for (size_t i = 0; i < server->peerCount; ++i)
-    send_time_msec(&server->peers[i], curTime);
+  for (const auto peerEntry : playerPeers)
+  {
+    send_time_msec(peerEntry.second, curTime);
+  }
 }
 
 int main(int argc, const char **argv)
@@ -113,37 +122,36 @@ int main(int argc, const char **argv)
     printf("Cannot init ENet");
     return 1;
   }
-  ENetAddress address;
+  atexit(enet_deinitialize);
 
-  address.host = ENET_HOST_ANY;
-  address.port = 10131;
-
-  ENetHost *server = enet_host_create(&address, 32, 2, 0, 0);
-
-  if (!server)
+  ENetHost *serverHost;
   {
-    printf("Cannot create ENet server\n");
-    return 1;
+    ENetAddress address;
+    address.host = ENET_HOST_ANY;
+    address.port = 10131;
+
+    serverHost = enet_host_create(&address, 32, 2, 0, 0);
+    if (!serverHost)
+    {
+      printf("Cannot create ENet server\n");
+      return 1;
+    }
   }
 
   uint32_t lastTime = enet_time_get();
+  float dt = 0.f;
   while (true)
   {
     uint32_t curTime = enet_time_get();
-    float dt = (curTime - lastTime) * 0.001f;
+    dt = (curTime - lastTime) * 0.001f;
     lastTime = curTime;
 
-    update_net(server);
-    simulate_world(server, dt);
-    update_time(server, curTime);
-
-    //usleep(100000);
+    update_net(serverHost);
+    update_world(serverHost, dt);
+    update_time(serverHost, curTime);
   }
 
-  enet_host_destroy(server);
+  enet_host_destroy(serverHost);
 
-  atexit(enet_deinitialize);
   return 0;
 }
-
-
