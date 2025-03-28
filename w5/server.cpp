@@ -1,4 +1,5 @@
 #include <enet/enet.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unordered_map>
@@ -138,11 +139,14 @@ int main(int argc, const char **argv)
     }
   }
 
-  uint32_t lastTime = enet_time_get();
+  uint32_t curTime = 0;
+  uint32_t lastTime = 0;
   float dt = 0.f;
+  enet_time_set(0);
+
   while (true)
   {
-    uint32_t curTime = enet_time_get();
+    curTime = enet_time_get();
     dt = (curTime - lastTime) * 0.001f;
     lastTime = curTime;
 

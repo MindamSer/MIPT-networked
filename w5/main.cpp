@@ -190,10 +190,17 @@ int main(int argc, const char **argv)
 
   SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
 
+
+  uint32_t curTime = 0;
+  uint32_t lastTime = 0;
   float dt = 0.f;
+  enet_time_set(0);
+
   while (!WindowShouldClose())
   {
-    dt = GetFrameTime(); // for future use and making it look smooth
+    curTime = enet_time_get();
+    dt = (curTime - lastTime) * 0.001f;
+    lastTime = curTime;
 
     update_net(clientHost, serverPeer);
     simulate_world(serverPeer);
