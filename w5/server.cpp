@@ -103,7 +103,7 @@ static void update_world(ENetHost* server, float dt)
     // send
     for (const auto &peerEntry : playerPeers)
     {
-      send_snapshot(peerEntry.second, ent.eid, ent.x, ent.y, ent.alpha);
+      send_snapshot(peerEntry.second, ent.eid, {ent.x, ent.y, ent.alpha});
     }
   }
 }

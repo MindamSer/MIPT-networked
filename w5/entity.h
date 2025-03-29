@@ -25,3 +25,18 @@ struct Entity
 
   void update(float dt);
 };
+
+
+struct Snapshot
+{
+  float x = 0.f;
+  float y = 0.f;
+  float alpha = 0.f;
+};
+
+struct ControlSnapshot : public Snapshot
+{
+  float vx = 0.f;
+  float vy = 0.f;
+  float omega = 0.f;
+};

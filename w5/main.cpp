@@ -41,13 +41,13 @@ static void get_entity(uint16_t eid, Callable c)
 void on_snapshot(ENetPacket *packet)
 {
   uint16_t eid = invalid_entity;
-  float x = 0.f; float y = 0.f; float ori = 0.f;
-  deserialize_snapshot(packet, eid, x, y, ori);
+  Snapshot snap;
+  deserialize_snapshot(packet, eid, snap);
   get_entity(eid, [&](Entity& e)
   {
-      e.x = x;
-      e.y = y;
-      e.alpha = ori;
+      e.x = snap.x;
+      e.y = snap.y;
+      e.alpha = snap.alpha;
   });
 }
 
