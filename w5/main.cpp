@@ -55,7 +55,26 @@ void on_snapshot(ENetPacket *packet)
 
 void correct_local_states(const ControlSnapshot &contSnap)
 {
-  return;
+  size_t stateHistorySize = my_entity_states_history.size();
+
+  size_t lowerIdx = 0;
+  for (lowerIdx = 0; lowerIdx < stateHistorySize; ++lowerIdx)
+  {
+    if (my_entity_states_history[lowerIdx].timeStamp < contSnap.timeStamp)
+    {
+      break;
+    }
+  }
+  if (lowerIdx == 0)
+  {
+    return;
+  }
+
+  ControlSnapshot delta = contSnap - my_entity_states_history[lowerIdx - 1];
+  for (size_t i = 0; i < lowerIdx; ++i)
+  {
+    my_entity_states_history[i] = my_entity_states_history[i] + delta;
+  }
 }
 
 void on_control_snapshot(ENetPacket *packet)

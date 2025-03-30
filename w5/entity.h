@@ -48,3 +48,13 @@ struct ControlSnapshot : public Snapshot
   float vy = 0.f;
   float omega = 0.f;
 };
+
+inline ControlSnapshot operator+(const ControlSnapshot &a, const ControlSnapshot &b)
+{
+  return {a.timeStamp, a.x + b.x, a.y + b.y, a.alpha + b.alpha, a.vx + b.vx, a.vy + b.vy, a.omega + b.omega};
+}
+
+inline ControlSnapshot operator-(const ControlSnapshot &a, const ControlSnapshot &b)
+{
+  return {0, a.x - b.x, a.y - b.y, a.alpha - b.alpha, a.vx - b.vx, a.vy - b.vy, a.omega - b.omega};
+}
