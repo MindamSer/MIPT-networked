@@ -11,6 +11,9 @@
 static std::unordered_map<uint16_t, Entity> entities;
 static std::unordered_map<uint16_t, ENetPeer*> playerPeers;
 
+static uint32_t curTime = 0;
+static uint32_t lastTime = 0;
+
 static void on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host)
 {
   // find max eid
@@ -63,9 +66,12 @@ static void on_input(ENetPacket *packet)
 
 static void update_net(ENetHost* serverHost)
 {
+  size_t processedMsgs = 0;
   ENetEvent event;
   while (enet_host_service(serverHost, &event, 10) > 0)
   {
+    ++processedMsgs;
+
     switch (event.type)
     {
     case ENET_EVENT_TYPE_CONNECT:
@@ -88,6 +94,8 @@ static void update_net(ENetHost* serverHost)
     default:
       break;
     };
+
+    if (processedMsgs >= 7) break;
   }
 }
 
@@ -103,7 +111,7 @@ static void update_world(ENetHost* server, float dt)
     // send
     for (const auto &peerEntry : playerPeers)
     {
-      send_snapshot(peerEntry.second, ent.eid, {ent.x, ent.y, ent.alpha});
+      send_snapshot(peerEntry.second, ent.eid, {curTime, ent.x, ent.y, ent.alpha});
     }
   }
 }
@@ -139,8 +147,6 @@ int main(int argc, const char **argv)
     }
   }
 
-  uint32_t curTime = 0;
-  uint32_t lastTime = 0;
   float dt = 0.f;
   enet_time_set(0);
 

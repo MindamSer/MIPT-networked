@@ -66,12 +66,12 @@ void send_time_msec(ENetPeer *peer, const uint32_t &timeMsec)
 
 void send_snapshot(ENetPeer *peer, const uint16_t &eid, const Snapshot &snap)
 {
-  size_t packetSize = sizeof(MessageType) + sizeof(Snapshot);
+  size_t packetSize = sizeof(MessageType) + sizeof(uint16_t) + sizeof(Snapshot);
 
   ENetPacket *packet = enet_packet_create(nullptr, packetSize, ENET_PACKET_FLAG_UNSEQUENCED);
   BitStream bs(packetSize);
 
-  bs << E_SERVER_TO_CLIENT_SNAPSHOT << snap;
+  bs << E_SERVER_TO_CLIENT_SNAPSHOT << eid << snap;
   bs.flush(packet->data);
 
   enet_peer_send(peer, 0, packet);
@@ -79,12 +79,12 @@ void send_snapshot(ENetPeer *peer, const uint16_t &eid, const Snapshot &snap)
 
 void send_control_snapshot(ENetPeer *peer, const uint16_t &eid, ControlSnapshot &contSnap)
 {
-  size_t packetSize = sizeof(MessageType) + sizeof(ControlSnapshot);
+  size_t packetSize = sizeof(MessageType) + sizeof(uint16_t) + sizeof(ControlSnapshot);
 
   ENetPacket *packet = enet_packet_create(nullptr, packetSize, ENET_PACKET_FLAG_UNSEQUENCED);
   BitStream bs(packetSize);
 
-  bs << E_SERVER_TO_CLIENT_SNAPSHOT << contSnap;
+  bs << E_SERVER_TO_CLIENT_SNAPSHOT << eid << contSnap;
   bs.flush(packet->data);
 
   enet_peer_send(peer, 0, packet);

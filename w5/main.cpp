@@ -8,10 +8,18 @@
 
 #include "entity.h"
 #include "protocol.h"
+#include "CyclicBuffer.h"
 
 
 static std::unordered_map<uint16_t, Entity> entities;
 static uint16_t my_entity = invalid_entity;
+
+static constexpr const uint32_t INTERPOLATION_DELAY = 200;
+static constexpr const size_t SNAPSHOT_HISTORY_MAX = 32;
+static std::unordered_map<uint16_t, CyclycBuffer<Snapshot, SNAPSHOT_HISTORY_MAX>> snapshot_histories;
+
+static uint32_t curTime = 0;
+static uint32_t lastTime = 0;
 
 void on_new_entity_packet(ENetPacket *packet)
 {
@@ -23,6 +31,7 @@ void on_new_entity_packet(ENetPacket *packet)
     return;
 
   entities[newEntity.eid] = newEntity;
+  snapshot_histories[newEntity.eid] = {{curTime, newEntity.x, newEntity.y, newEntity.alpha}};
 }
 
 void on_set_controlled_entity(ENetPacket *packet)
@@ -43,12 +52,7 @@ void on_snapshot(ENetPacket *packet)
   uint16_t eid = invalid_entity;
   Snapshot snap;
   deserialize_snapshot(packet, eid, snap);
-  get_entity(eid, [&](Entity& e)
-  {
-      e.x = snap.x;
-      e.y = snap.y;
-      e.alpha = snap.alpha;
-  });
+  snapshot_histories[eid].push(snap);
 }
 
 static void on_time(ENetPacket *packet, ENetPeer* peer)
@@ -72,9 +76,12 @@ static void draw_entity(const Entity& e)
 
 static void update_net(ENetHost* client, ENetPeer* serverPeer)
 {
+  size_t processedMsgs = 0;
   ENetEvent event;
   while (enet_host_service(client, &event, 10) > 0)
   {
+    ++processedMsgs;
+
     switch (event.type)
     {
     case ENET_EVENT_TYPE_CONNECT:
@@ -104,6 +111,8 @@ static void update_net(ENetHost* client, ENetPeer* serverPeer)
     default:
       break;
     };
+
+    if (processedMsgs >= 7) break;
   }
 }
 
@@ -124,6 +133,45 @@ static void simulate_world(ENetPeer* serverPeer)
         // Send
         send_entity_input(serverPeer, my_entity, thr, steer);
     });
+  }
+}
+
+static void interpolate_entities()
+{
+  uint32_t targetTime = curTime - INTERPOLATION_DELAY;
+
+  for (auto &entEntry : entities)
+  {
+    auto &curSnapshotHistory = snapshot_histories[entEntry.first];
+    size_t curHistorySize = curSnapshotHistory.size();
+
+    size_t lowerIdx = 0;
+    for (lowerIdx = 0; lowerIdx < curHistorySize; ++lowerIdx)
+    {
+      if (curSnapshotHistory[lowerIdx].timeStamp < targetTime)
+      {
+        break;
+      }
+    }
+
+    Snapshot interpolatedSnapshot;
+    if (lowerIdx == 0)
+    {
+      interpolatedSnapshot = curSnapshotHistory[0];
+    }
+    else if (lowerIdx == curHistorySize)
+    {
+      interpolatedSnapshot = curSnapshotHistory[curHistorySize - 1];
+    }
+    else
+    {
+      interpolatedSnapshot = interpolate(curSnapshotHistory[lowerIdx], curSnapshotHistory[lowerIdx - 1], targetTime);
+    }
+
+    Entity &ent = entEntry.second;
+    ent.x = interpolatedSnapshot.x;
+    ent.y = interpolatedSnapshot.y;
+    ent.alpha = interpolatedSnapshot.alpha;
   }
 }
 
@@ -191,8 +239,6 @@ int main(int argc, const char **argv)
   SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
 
 
-  uint32_t curTime = 0;
-  uint32_t lastTime = 0;
   float dt = 0.f;
   enet_time_set(0);
 
@@ -204,6 +250,7 @@ int main(int argc, const char **argv)
 
     update_net(clientHost, serverPeer);
     simulate_world(serverPeer);
+    interpolate_entities();
     draw_world(camera);
   }
 

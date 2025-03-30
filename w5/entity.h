@@ -29,10 +29,18 @@ struct Entity
 
 struct Snapshot
 {
+  uint32_t timeStamp = 0;
+
   float x = 0.f;
   float y = 0.f;
   float alpha = 0.f;
 };
+
+inline Snapshot interpolate(const Snapshot &a, const Snapshot &b, const uint32_t targetTime)
+{
+  float t = (1.f * (targetTime - a.timeStamp)) / (1.f * (b.timeStamp - a.timeStamp));
+  return {targetTime, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.alpha + (b.alpha - a.alpha) * t };
+}
 
 struct ControlSnapshot : public Snapshot
 {
