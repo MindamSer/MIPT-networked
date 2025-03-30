@@ -18,6 +18,9 @@ static constexpr const uint32_t INTERPOLATION_DELAY = 200;
 static constexpr const size_t SNAPSHOT_HISTORY_MAX = 32;
 static std::unordered_map<uint16_t, CyclycBuffer<Snapshot, SNAPSHOT_HISTORY_MAX>> snapshot_histories;
 
+static constexpr const size_t STATES_HISTORY_MAX = 32;
+static CyclycBuffer<ControlSnapshot, STATES_HISTORY_MAX> my_entity_states_history;
+
 static uint32_t curTime = 0;
 static uint32_t lastTime = 0;
 
@@ -37,14 +40,9 @@ void on_new_entity_packet(ENetPacket *packet)
 void on_set_controlled_entity(ENetPacket *packet)
 {
   deserialize_set_controlled_entity(packet, my_entity);
-}
 
-template<typename Callable>
-static void get_entity(uint16_t eid, Callable c)
-{
-  auto itf = entities.find(eid);
-  if (itf != entities.end())
-    c(itf->second);
+  Entity &ent = entities[my_entity];
+  my_entity_states_history = {{curTime, ent.x, ent.y, ent.alpha, ent.vx, ent.vy, ent.omega}};
 }
 
 void on_snapshot(ENetPacket *packet)
@@ -53,6 +51,19 @@ void on_snapshot(ENetPacket *packet)
   Snapshot snap;
   deserialize_snapshot(packet, eid, snap);
   snapshot_histories[eid].push(snap);
+}
+
+void correct_local_states(const ControlSnapshot &contSnap)
+{
+  return;
+}
+
+void on_control_snapshot(ENetPacket *packet)
+{
+  uint16_t eid = invalid_entity;
+  ControlSnapshot contSnap;
+  deserialize_control_snapshot(packet, eid, contSnap);
+  correct_local_states(contSnap);
 }
 
 static void on_time(ENetPacket *packet, ENetPeer* peer)
@@ -64,13 +75,70 @@ static void on_time(ENetPacket *packet, ENetPeer* peer)
 
 static void draw_entity(const Entity& e)
 {
+  Snapshot drawing = {};
+  uint32_t targetTime = curTime - INTERPOLATION_DELAY;
+
+  if (e.eid == my_entity)
+  {
+    size_t stateHistorySize = my_entity_states_history.size();
+
+    size_t lowerIdx = 0;
+    for (lowerIdx = 0; lowerIdx < stateHistorySize; ++lowerIdx)
+    {
+      if (my_entity_states_history[lowerIdx].timeStamp < targetTime)
+      {
+        break;
+      }
+    }
+
+    if (lowerIdx == 0)
+    {
+      drawing = my_entity_states_history[0];
+    }
+    else if (lowerIdx == stateHistorySize)
+    {
+      drawing = my_entity_states_history[stateHistorySize - 1];
+    }
+    else
+    {
+      drawing = interpolate(my_entity_states_history[lowerIdx], my_entity_states_history[lowerIdx - 1], targetTime);
+    }
+  }
+  else
+  {
+    auto &curSnapshotHistory = snapshot_histories[e.eid];
+    size_t curHistorySize = curSnapshotHistory.size();
+
+    size_t lowerIdx = 0;
+    for (lowerIdx = 0; lowerIdx < curHistorySize; ++lowerIdx)
+    {
+      if (curSnapshotHistory[lowerIdx].timeStamp < targetTime)
+      {
+        break;
+      }
+    }
+
+    if (lowerIdx == 0)
+    {
+      drawing = curSnapshotHistory[0];
+    }
+    else if (lowerIdx == curHistorySize)
+    {
+      drawing = curSnapshotHistory[curHistorySize - 1];
+    }
+    else
+    {
+      drawing = interpolate(curSnapshotHistory[lowerIdx], curSnapshotHistory[lowerIdx - 1], targetTime);
+    }
+  }
+
   const float shipLen = 3.f;
   const float shipWidth = 2.f;
-  const Vector2 fwd = Vector2{cosf(e.alpha), sinf(e.alpha)};
+  const Vector2 fwd = Vector2{cosf(drawing.alpha), sinf(drawing.alpha)};
   const Vector2 left = Vector2{-fwd.y, fwd.x};
-  DrawTriangle(Vector2{e.x + fwd.x * shipLen * 0.5f, e.y + fwd.y * shipLen * 0.5f},
-               Vector2{e.x - fwd.x * shipLen * 0.5f - left.x * shipWidth * 0.5f, e.y - fwd.y * shipLen * 0.5f - left.y * shipWidth * 0.5f},
-               Vector2{e.x - fwd.x * shipLen * 0.5f + left.x * shipWidth * 0.5f, e.y - fwd.y * shipLen * 0.5f + left.y * shipWidth * 0.5f},
+  DrawTriangle(Vector2{drawing.x + fwd.x * shipLen * 0.5f, drawing.y + fwd.y * shipLen * 0.5f},
+               Vector2{drawing.x - fwd.x * shipLen * 0.5f - left.x * shipWidth * 0.5f, drawing.y - fwd.y * shipLen * 0.5f - left.y * shipWidth * 0.5f},
+               Vector2{drawing.x - fwd.x * shipLen * 0.5f + left.x * shipWidth * 0.5f, drawing.y - fwd.y * shipLen * 0.5f + left.y * shipWidth * 0.5f},
                GetColor(e.color));
 }
 
@@ -100,6 +168,9 @@ static void update_net(ENetHost* client, ENetPeer* serverPeer)
       case E_SERVER_TO_CLIENT_SNAPSHOT:
         on_snapshot(event.packet);
         break;
+      case E_SERVER_TO_CLIENT_CONTROL_SNAPSHOT:
+        on_control_snapshot(event.packet);
+        break;
       case E_SERVER_TO_CLIENT_TIME_MSEC:
         on_time(event.packet, event.peer);
         break;
@@ -116,62 +187,29 @@ static void update_net(ENetHost* client, ENetPeer* serverPeer)
   }
 }
 
-static void simulate_world(ENetPeer* serverPeer)
+static void simulate_world(ENetPeer* serverPeer, float dt)
 {
   if (my_entity != invalid_entity)
   {
+    Entity &ent = entities[my_entity];
+
     bool left = IsKeyDown(KEY_LEFT);
     bool right = IsKeyDown(KEY_RIGHT);
     bool up = IsKeyDown(KEY_UP);
     bool down = IsKeyDown(KEY_DOWN);
-    get_entity(my_entity, [&](Entity& e)
-    {
-        // Update
-        float thr = (up ? 1.f : 0.f) + (down ? -1.f : 0.f);
-        float steer = (left ? -1.f : 0.f) + (right ? 1.f : 0.f);
 
-        // Send
-        send_entity_input(serverPeer, my_entity, thr, steer);
-    });
-  }
-}
+    // Update
+    float thr = (up ? 1.f : 0.f) + (down ? -1.f : 0.f);
+    float steer = (left ? -1.f : 0.f) + (right ? 1.f : 0.f);
 
-static void interpolate_entities()
-{
-  uint32_t targetTime = curTime - INTERPOLATION_DELAY;
+    ent.thr = thr;
+    ent.steer = steer;
+    ent.update(dt);
 
-  for (auto &entEntry : entities)
-  {
-    auto &curSnapshotHistory = snapshot_histories[entEntry.first];
-    size_t curHistorySize = curSnapshotHistory.size();
+    my_entity_states_history.push({curTime, ent.x, ent.y, ent.alpha, ent.vx, ent.vy, ent.omega});
 
-    size_t lowerIdx = 0;
-    for (lowerIdx = 0; lowerIdx < curHistorySize; ++lowerIdx)
-    {
-      if (curSnapshotHistory[lowerIdx].timeStamp < targetTime)
-      {
-        break;
-      }
-    }
-
-    Snapshot interpolatedSnapshot;
-    if (lowerIdx == 0)
-    {
-      interpolatedSnapshot = curSnapshotHistory[0];
-    }
-    else if (lowerIdx == curHistorySize)
-    {
-      interpolatedSnapshot = curSnapshotHistory[curHistorySize - 1];
-    }
-    else
-    {
-      interpolatedSnapshot = interpolate(curSnapshotHistory[lowerIdx], curSnapshotHistory[lowerIdx - 1], targetTime);
-    }
-
-    Entity &ent = entEntry.second;
-    ent.x = interpolatedSnapshot.x;
-    ent.y = interpolatedSnapshot.y;
-    ent.alpha = interpolatedSnapshot.alpha;
+    // Send
+    send_entity_input(serverPeer, my_entity, thr, steer);
   }
 }
 
@@ -245,12 +283,18 @@ int main(int argc, const char **argv)
   while (!WindowShouldClose())
   {
     curTime = enet_time_get();
-    dt = (curTime - lastTime) * 0.001f;
+    if (curTime > lastTime)
+    {
+      dt = (curTime - lastTime) * 0.001f;
+    }
+    else
+    {
+      dt = 0.f;
+    }
     lastTime = curTime;
 
     update_net(clientHost, serverPeer);
-    simulate_world(serverPeer);
-    interpolate_entities();
+    simulate_world(serverPeer, dt);
     draw_world(camera);
   }
 

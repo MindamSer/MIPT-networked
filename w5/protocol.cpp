@@ -77,7 +77,7 @@ void send_snapshot(ENetPeer *peer, const uint16_t &eid, const Snapshot &snap)
   enet_peer_send(peer, 0, packet);
 }
 
-void send_control_snapshot(ENetPeer *peer, const uint16_t &eid, ControlSnapshot &contSnap)
+void send_control_snapshot(ENetPeer *peer, const uint16_t &eid, const ControlSnapshot &contSnap)
 {
   size_t packetSize = sizeof(MessageType) + sizeof(uint16_t) + sizeof(ControlSnapshot);
 
